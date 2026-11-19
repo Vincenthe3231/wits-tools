@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+  --surface-editor: #fefaf3;
+  --surface-toolbar: #e6f2dd;
+  --surface-selected: #b1d3b9;
+  --text-primary: #24312b;
+  --text-muted: #51645b;
+  --accent-strong: #24483d;
+  --text-on-accent: #ffffff;
+  --font-code: "Cascadia Mono", Consolas, monospace;
+  background: var(--surface-editor);
+  color: var(--text-primary);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-editor: #17211d;
+    --surface-toolbar: #202e28;
+    --surface-selected: #344a3f;
+    --text-primary: #eaf2eb;
+    --text-muted: #b5c6bb;
+    --accent-strong: #a9d3ba;
+    --text-on-accent: #17211d;
+  }
+}
+
+button {
+  min-height: 2rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 0.35rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled),
+button[aria-pressed="true"] {
+  color: var(--text-primary);
+  background: var(--surface-selected);
+}
+
+button[aria-pressed="true"] {
+  border-bottom: 2px solid var(--accent-strong);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.primary-button,
+.primary-button:hover:not(:disabled) {
+  background: var(--accent-strong);
+  color: var(--text-on-accent);
+}
+
+.primary-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+:is(button, input, summary, [contenteditable]):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+dialog {
+  width: min(26rem, calc(100% - 2rem));
+  margin: auto;
+  border: 1px solid var(--text-muted);
+  border-radius: 0.65rem;
+  background: var(--surface-editor);
+  color: var(--text-primary);
+}
+
+dialog::backdrop {
+  background: #0008;
+}
+
+.dialog-content {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1.2rem;
+}
+
+.dialog-content h2 {
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.dialog-content input {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 0.3rem;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.animated-caret {
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto auto 0;
+  width: 2px;
+  pointer-events: none;
+  background: var(--accent-strong);
+  transition: transform 90ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+.has-animated-caret :is(.cm-editor .cm-content, .visual-content .tiptap) {
+  caret-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .animated-caret {
+    display: none;
+  }
+
+  .has-animated-caret :is(.cm-editor .cm-content, .visual-content .tiptap) {
+    caret-color: auto;
+  }
+}

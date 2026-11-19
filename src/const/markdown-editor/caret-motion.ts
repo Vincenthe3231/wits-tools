@@ -1,0 +1,2 @@
+export const CARET_TRAIL_MIN_DISTANCE = 24;
+export const CARET_TRAIL_MAX_LENGTH = 110;
