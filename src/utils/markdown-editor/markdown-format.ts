@@ -1,3 +1,4 @@
+/** Configures the Visual Markdown schema and checks whether files can be edited safely. */
 import { Editor, type JSONContent } from "@tiptap/core";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
@@ -15,9 +16,68 @@ const sourceOnly = new Map([
   ["hr", "thematic breaks"],
 ]);
 
+// Give empty blocks explicit Markdown so inserting one is safe before the user types.
+const VisualStarterKit = StarterKit.extend({
+  addExtensions() {
+    return (this.parent?.() ?? []).map((extension) => {
+      if (extension.name === "paragraph") {
+        return extension.extend({
+          renderMarkdown(node, helpers, context) {
+            // An empty paragraph moved to the start of the document needs an explicit marker.
+            return !node.content?.length && context.parentType === "doc"
+              ? "&nbsp;"
+              : (this.parent?.(node, helpers, context) ?? "");
+          },
+        });
+      }
+      if (extension.name === "heading") {
+        return extension.extend({
+          renderMarkdown(node, helpers, context) {
+            return node.content?.length
+              ? (this.parent?.(node, helpers, context) ?? "")
+              : "#".repeat(Number(node.attrs?.level ?? 1));
+          },
+        });
+      }
+      if (extension.name === "blockquote") {
+        return extension.extend({
+          renderMarkdown(node, helpers, context) {
+            const empty =
+              node.content?.length === 1 &&
+              !node.content[0].content?.length &&
+              node.content[0].type === "paragraph";
+            return empty ? "> &nbsp;" : (this.parent?.(node, helpers, context) ?? "");
+          },
+        });
+      }
+      if (extension.name === "listItem") {
+        return extension.extend({
+          renderMarkdown(node, helpers, context) {
+            const output = this.parent?.(node, helpers, context) ?? "";
+            if (node.content?.length !== 1 || node.content[0].content?.length) {
+              return output;
+            }
+            return context.parentType === "orderedList" ? output + "&nbsp;" : output + " ";
+          },
+        });
+      }
+      return extension;
+    });
+  },
+});
+
+// The task tokenizer requires whitespace after an otherwise empty checkbox marker.
+const VisualTaskItem = TaskItem.extend({
+  renderMarkdown(node, helpers, context) {
+    const output = this.parent?.(node, helpers, context) ?? "";
+    return node.content?.length === 1 && !node.content[0].content?.length ? output + " " : output;
+  },
+});
+
+// Share the same extensions for editing, compatibility checks, and round trips.
 export function markdownExtensions() {
   return [
-    StarterKit.configure({
+    VisualStarterKit.configure({
       horizontalRule: false,
       strike: false,
       underline: false,
@@ -25,7 +85,8 @@ export function markdownExtensions() {
       link: { openOnClick: false, autolink: false, linkOnPaste: false },
     }),
     TaskList,
-    TaskItem.configure({ nested: true }),
+    // The live task NodeView needs the same selector as the serialized HTML.
+    VisualTaskItem.configure({ nested: true, HTMLAttributes: { "data-type": "taskItem" } }),
     Markdown,
   ];
 }

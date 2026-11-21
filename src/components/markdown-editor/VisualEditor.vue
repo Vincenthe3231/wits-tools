@@ -1,6 +1,6 @@
 <!-- Hosts Tiptap, Visual editing controls, and transient editor interactions. -->
 <script setup lang="ts">
-import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from "vue";
+import { nextTick, onMounted, onScopeDispose, ref, shallowRef, watch } from "vue";
 import { Editor, EditorContent } from "@tiptap/vue-3";
 
 import {
@@ -8,7 +8,9 @@ import {
   markdownExtensions,
 } from "../../utils/markdown-editor/markdown-format";
 import { useAnimatedCaret } from "../../composables/markdown-editor/use-animated-caret";
-import { activeBlock, blockActions, moveBlock } from "../../utils/markdown-editor/visual-blocks";
+import { useSlashMenu } from "../../composables/markdown-editor/use-slash-menu";
+import type { BlockAction } from "../../utils/markdown-editor/visual-blocks";
+import VisualBlockControls from "./VisualBlockControls.vue";
 import NavigationTransition from "../NavigationTransition.vue";
 import EditorCaret from "./EditorCaret.vue";
 
@@ -16,73 +18,59 @@ const props = defineProps<{ locked: boolean }>();
 const emit = defineEmits<{ edited: [] }>();
 const surface = ref<HTMLElement>();
 const editor = shallowRef<Editor>();
-const slash = ref<{ from: number; to: number; query: string }>();
-const activeOption = ref(0);
+// Keep menu state outside the saved document and reuse the editor's current selection.
+const commands = useSlashMenu(editor);
+const { slash, activeOption, choices } = commands;
+const controls = ref<InstanceType<typeof VisualBlockControls>>();
+const popup = ref<HTMLElement>();
+const popupPosition = ref({ left: "0px", top: "0px", maxHeight: "0px" });
+const blockError = ref("");
 const linkDialog = ref<HTMLDialogElement>();
 const linkValue = ref("");
 const linkError = ref("");
 const linkButton = ref<HTMLButtonElement>();
-const blockMenu = ref<HTMLDetailsElement>();
-const blockTrigger = ref<HTMLElement>();
 const composing = ref(false);
-let dismissedSlash: number | undefined;
 let linkApplied = false;
 
-const choices = computed(() =>
-  blockActions.filter((item) => item.label.toLowerCase().includes(slash.value?.query ?? "")),
-);
-const blockIndex = computed(() => (editor.value ? activeBlock(editor.value) : 0));
-const canMoveDown = computed(() =>
-  editor.value ? blockIndex.value + 1 < editor.value.state.doc.childCount : false,
-);
+const { caret, trail, refresh, hide } = useAnimatedCaret(surface, () => {
+  const current = editor.value;
+  if (
+    !current?.isFocused ||
+    composing.value ||
+    current.view.composing ||
+    !current.state.selection.empty
+  ) {
+    return null;
+  }
+  return current.view.coordsAtPos(current.state.selection.head);
+});
 
-const { caret, trail, refresh, hide } = useAnimatedCaret(
-  surface,
-  () => {
-    const current = editor.value;
-    if (
-      !current?.isFocused ||
-      composing.value ||
-      current.view.composing ||
-      !current.state.selection.empty
-    ) {
-      return null;
-    }
-    return current.view.coordsAtPos(current.state.selection.head);
-  },
-);
-
-function updateSlash(current: Editor) {
-  const { $head, empty } = current.state.selection;
-  const paragraph = $head.depth === 1 && $head.parent.type.name === "paragraph";
-  const prefix =
-    paragraph && $head.parentOffset <= 64 ? $head.parent.textBetween(0, $head.parentOffset) : "";
-  const match = /^\/([a-z\d -]*)$/i.exec(prefix);
-  if (!empty || !match) {
-    slash.value = undefined;
-    dismissedSlash = undefined;
+// Anchor the menu to the insertion point and reserve space for the visible results.
+function positionSlash() {
+  const current = editor.value;
+  const bounds = surface.value?.getBoundingClientRect();
+  if (!slash.value || !current || !bounds) {
     return;
   }
-
-  const from = $head.start();
-  if (dismissedSlash === from) {
-    return;
-  }
-  const query = match[1].toLowerCase();
-  if (slash.value?.query !== query) {
-    activeOption.value = 0;
-  }
-  slash.value = { from, to: $head.pos, query };
+  const cursor = current.view.coordsAtPos(current.state.selection.head);
+  const availableBelow = bounds.bottom - cursor.bottom - 8;
+  const availableAbove = cursor.top - bounds.top - 8;
+  const above = availableBelow < 220 && availableAbove > availableBelow;
+  const maxHeight = Math.max(0, Math.min(290, above ? availableAbove : availableBelow));
+  const height = Math.min(maxHeight, popup.value?.scrollHeight ?? maxHeight);
+  const width = popup.value?.offsetWidth ?? 240;
+  popupPosition.value = {
+    left: Math.max(8, Math.min(cursor.left - bounds.left, bounds.width - width - 8)) + "px",
+    top:
+      Math.max(0, above ? cursor.top - bounds.top - height - 4 : cursor.bottom - bounds.top + 4) +
+      "px",
+    maxHeight: maxHeight + "px",
+  };
 }
 
-function runSlash(item: (typeof blockActions)[number]) {
-  const current = editor.value;
-  const range = slash.value;
-  if (!current || !range || props.locked) {
-    return;
-  }
-  slash.value = undefined;
-  item.apply(current.chain().focus().deleteRange({ from: range.from, to: range.to })).run();
+// Report guarded command failures without changing the user's typed text.
+function runSlash(item: BlockAction) {
+  blockError.value = commands.run(item) ?? "";
 }
 
 function slashKey(event: KeyboardEvent) {
@@ -92,8 +80,7 @@ function slashKey(event: KeyboardEvent) {
 
   const items = choices.value;
   if (event.key === "Escape") {
-    dismissedSlash = slash.value.from;
-    slash.value = undefined;
+    commands.dismiss();
   } else if (items.length && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
     const step = event.key === "ArrowDown" ? 1 : -1;
     activeOption.value = (activeOption.value + step + items.length) % items.length;
@@ -122,6 +109,15 @@ function prepare(markdown: string): string | undefined {
         role: "textbox",
         "aria-multiline": "true",
       },
+      // Dispatch the literal slash before tracking it so existing text never triggers a menu.
+      handleTextInput(view, from, to, text) {
+        if (text !== "/" || composing.value || view.composing || props.locked) {
+          return false;
+        }
+        view.dispatch(view.state.tr.insertText(text, from, to));
+        commands.start(from);
+        return true;
+      },
       handleKeyDown: (_view, event) => slashKey(event),
       handleDOMEvents: {
         compositionstart: () => {
@@ -137,15 +133,15 @@ function prepare(markdown: string): string | undefined {
       },
     },
     onUpdate: () => emit("edited"),
-    onTransaction: ({ editor: current }) => {
+    onTransaction: ({ editor: current, transaction }) => {
       if (current === editor.value) {
-        updateSlash(current as Editor);
+        commands.update(transaction);
         refresh();
       }
     },
     onFocus: () => refresh(),
     onBlur: () => {
-      slash.value = undefined;
+      commands.dismiss();
       hide();
     },
   });
@@ -161,8 +157,7 @@ function prepare(markdown: string): string | undefined {
   }
   editor.value?.destroy();
   editor.value = next;
-  slash.value = undefined;
-  dismissedSlash = undefined;
+  commands.dismiss();
   return undefined;
 }
 
@@ -196,23 +191,26 @@ function restoreLinkFocus() {
   }
 }
 
-function closeBlockMenu(restoreFocus: boolean) {
-  if (blockMenu.value?.open) {
-    blockMenu.value.open = false;
-  }
-  if (restoreFocus) {
-    blockTrigger.value?.focus();
+// Keep menu geometry synchronized after results change size.
+watch(slash, () => void nextTick(positionSlash), { flush: "post" });
+
+// A click outside the popup dismisses it even when the editor keeps focus.
+function dismissSlashOutside(event: PointerEvent) {
+  if (slash.value && event.target instanceof Node && !popup.value?.contains(event.target)) {
+    commands.dismiss();
   }
 }
 
-function moveActiveBlock(direction: -1 | 1) {
-  const current = editor.value;
-  if (!current || props.locked) {
-    return;
-  }
-  closeBlockMenu(false);
-  moveBlock(current, direction);
-}
+// Update the anchor when the window changes size without requiring a keystroke.
+onMounted(() => {
+  document.addEventListener("pointerdown", dismissSlashOutside, true);
+  window.addEventListener("resize", positionSlash);
+});
+
+onScopeDispose(() => {
+  document.removeEventListener("pointerdown", dismissSlashOutside, true);
+  window.removeEventListener("resize", positionSlash);
+});
 
 watch(
   () => props.locked,
@@ -232,8 +230,8 @@ watch([slash, activeOption], () => {
 onScopeDispose(() => editor.value?.destroy());
 // Clear transient UI on route suspension while preserving the Tiptap document and history.
 function dismissInteractions() {
-  slash.value = undefined;
-  closeBlockMenu(false);
+  commands.dismiss();
+  controls.value?.dismiss();
   linkDialog.value?.close();
   hide();
 }
@@ -274,45 +272,53 @@ defineExpose({
         Code
       </button>
       <button ref="linkButton" type="button" :disabled="locked" @click="openLink">Link</button>
-      <details ref="blockMenu" class="block-menu" @keydown.esc.stop.prevent="closeBlockMenu(true)">
-        <summary ref="blockTrigger">Block actions</summary>
-        <div class="block-menu-items">
-          <button type="button" :disabled="locked || blockIndex === 0" @click="moveActiveBlock(-1)">
-            Move Up
-          </button>
-          <button type="button" :disabled="locked || !canMoveDown" @click="moveActiveBlock(1)">
-            Move Down
-          </button>
-        </div>
-      </details>
+      <!-- Offer the same block actions from the keyboard-accessible toolbar. -->
+      <button
+        type="button"
+        :disabled="locked"
+        @click="controls?.openForSelection($event.currentTarget as HTMLElement)"
+      >
+        Block actions
+      </button>
     </div>
 
     <div ref="surface" class="visual-surface" :class="{ 'has-animated-caret': caret }">
-      <div class="visual-scroll">
+      <div class="visual-scroll" @scroll="positionSlash">
         <EditorContent :editor="editor" class="visual-content" />
       </div>
       <EditorCaret :caret="caret" :trail="trail" />
 
+      <!-- Keep block controls outside ProseMirror so they never become document content. -->
+      <VisualBlockControls
+        v-if="editor && surface"
+        ref="controls"
+        :editor="editor"
+        :surface="surface"
+        :locked="locked"
+        @error="blockError = $event"
+      />
+      <p v-if="blockError" class="block-error" role="status">{{ blockError }}</p>
+
       <!-- Animate the command menu while the editor keeps keyboard focus. -->
       <NavigationTransition kind="menu">
-
-      </NavigationTransition>      <div v-if="slash" class="slash-menu" @mousedown.prevent>
-        <div class="slash-title">Insert block</div>
-        <div v-if="!choices.length" role="status">No matching blocks</div>
-        <div v-else id="slash-commands" role="listbox" aria-label="Insert block">
-          <div
-            v-for="(item, index) in choices"
-            :id="`slash-option-${index}`"
-            :key="item.label"
-            role="option"
-            :aria-selected="index === activeOption"
-            @mousemove="activeOption = index"
-            @click="runSlash(item)"
-          >
-            {{ item.label }}
+        <div v-if="slash" ref="popup" class="slash-menu" :style="popupPosition" @mousedown.prevent>
+          <div class="slash-title">Insert block</div>
+          <div v-if="!choices.length" role="status">No matching blocks</div>
+          <div v-else id="slash-commands" role="listbox" aria-label="Insert block">
+            <div
+              v-for="(item, index) in choices"
+              :id="`slash-option-${index}`"
+              :key="item.label"
+              role="option"
+              :aria-selected="index === activeOption"
+              @mousemove="activeOption = index"
+              @click="runSlash(item)"
+            >
+              {{ item.label }}
+            </div>
           </div>
         </div>
-      </div>
+      </NavigationTransition>
     </div>
 
     <dialog ref="linkDialog" aria-labelledby="link-title" @close="restoreLinkFocus">
@@ -401,6 +407,8 @@ defineExpose({
   flex: 1;
   min-width: 0;
   padding: clamp(1rem, 3vw, 2rem);
+  /* Reserve a handle lane beside the text and native list markers. */
+  padding-inline-start: clamp(2.75rem, 5vw, 4rem);
   outline: none;
   line-height: 1.7;
   overflow-wrap: anywhere;
@@ -449,9 +457,18 @@ defineExpose({
 .visual-content :deep(ul[data-type="taskList"]) {
   list-style: none;
 }
+/* Align the checkbox to the first line and keep wrapped or nested text in its own column. */
 .visual-content :deep(li[data-type="taskItem"]) {
-  display: flex;
-  gap: 0.5rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 0.5rem;
+  list-style: none;
+}
+.visual-content :deep(li[data-type="taskItem"] > label) {
+  display: grid;
+  height: 1lh;
+  place-items: center;
 }
 .visual-content :deep(li[data-type="taskItem"] > div) {
   min-width: 0;
@@ -478,7 +495,8 @@ defineExpose({
 }
 
 .slash-menu {
-  inset: auto 0.75rem 0.75rem auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
   width: min(15rem, calc(100% - 1.5rem));
 }
 
@@ -489,8 +507,23 @@ defineExpose({
 }
 
 .slash-menu [role="listbox"] {
-  max-height: min(14rem, 33vh);
-  overflow-y: auto;
+  min-width: 0;
+}
+
+/* Use the scrollbar thumb without the platform's arrow buttons. */
+.slash-menu::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* Report an unavailable structural edit without covering the writing area. */
+.block-error {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 2;
+  padding: 0.5rem;
+  background: var(--surface-toolbar);
+  color: var(--text-primary);
 }
 
 .slash-menu [role="option"] {

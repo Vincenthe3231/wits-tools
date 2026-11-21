@@ -44,6 +44,8 @@ function switchMode(target: "source" | "visual", focus = true) {
     }
     mode.value = "visual";
   } else {
+    // End pointer capture and dismiss Visual overlays before hiding the pane.
+    visual.value?.dismissInteractions();
     session.materialize();
     mode.value = "source";
     revision.value += 1;
