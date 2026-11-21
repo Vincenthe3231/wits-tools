@@ -21,6 +21,7 @@ use super::{
     Error, Result,
     browser::{Browser, Resource},
     crawl::local_seed,
+    diagnostics::{Trace, origin},
     http_url, network,
 };
 use manifest::{Segment, Variant};
@@ -129,21 +130,65 @@ pub async fn discover(
     page: &str,
     proxy: Option<String>,
 ) -> Result<Vec<Candidate>> {
-    let url = http_url(page)?;
-    let endpoint = network::proxy(proxy.as_deref())?;
-    let mut browser =
-        Browser::start(executable, endpoint.as_ref(), false, local_seed(&url)).await?;
-    let result = browser.page(&url, true).await;
-    browser.shutdown().await;
-    Ok(group(result?.resources, proxy))
+    // Share the same trace across validation, browser startup, and candidate selection.
+    let trace = Trace::new(true);
+    trace.record(format_args!("discovery started origin={}", origin(page)));
+    let result = async {
+        let url = http_url(page)?;
+        let endpoint = network::proxy(proxy.as_deref())?;
+        let mut browser = Browser::start(
+            executable,
+            endpoint.as_ref(),
+            false,
+            local_seed(&url),
+            trace,
+        )
+        .await?;
+        let resources = browser.media(&url).await;
+        browser.shutdown().await;
+        Ok(group(resources?, proxy))
+    }
+    .await;
+    match &result {
+        Ok(sources) => {
+            for source in sources {
+                // Presence flags diagnose incomplete capture without displaying header values.
+                let has_header = |key: &str| {
+                    source
+                        .headers
+                        .iter()
+                        .any(|(name, value)| name.eq_ignore_ascii_case(key) && !value.is_empty())
+                };
+                trace.record(format_args!(
+                    "candidate kind={:?} origin={} segments={} cookie={} authorization={} referer={} content_type={} user_agent={}",
+                    source.kind,
+                    origin(source.url.as_str()),
+                    source.segments,
+                    has_header("cookie"),
+                    has_header("authorization"),
+                    has_header("referer"),
+                    has_header("content-type"),
+                    has_header("user-agent"),
+                ));
+            }
+            trace.record(format_args!(
+                "discovery finished candidates={}",
+                sources.len()
+            ));
+        }
+        Err(error) => trace.record(format_args!("discovery failed error={error}")),
+    }
+    result
 }
 
-fn group(resources: Vec<Resource>, proxy: Option<String>) -> Vec<Candidate> {
+fn group(mut resources: Vec<Resource>, proxy: Option<String>) -> Vec<Candidate> {
+    // Prefer a completed response with its MIME type and headers over a URL-only observation.
+    resources.sort_by_key(|resource| !(200..300).contains(&resource.status));
     let mut urls = HashSet::new();
     let mut sources = Vec::new();
     let mut segments = Vec::new();
     for resource in resources {
-        if !urls.insert(resource.url.clone()) || resource.status >= 400 {
+        if resource.status >= 300 || !urls.insert(resource.url.clone()) {
             continue;
         }
         if let Ok(candidate) = Candidate::new(

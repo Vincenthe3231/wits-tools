@@ -92,10 +92,12 @@ pub(super) fn replay_headers(values: &[(String, String)], credentials: bool) -> 
         let Ok(name) = header::HeaderName::from_bytes(name.as_bytes()) else {
             continue;
         };
+        // Treat Content-Type as origin-scoped when replaying a captured media request.
         let permitted = matches!(
             name.as_str(),
             "referer" | "origin" | "user-agent" | "accept"
-        ) || credentials && matches!(name.as_str(), "cookie" | "authorization");
+        ) || credentials
+            && matches!(name.as_str(), "cookie" | "authorization" | "content-type");
         if permitted && let Ok(mut value) = header::HeaderValue::from_str(value) {
             value.set_sensitive(matches!(name.as_str(), "cookie" | "authorization"));
             headers.insert(name, value);

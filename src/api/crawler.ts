@@ -12,6 +12,8 @@ export interface CrawlConfig {
   concurrency: number;
   requestDelayMillis: number;
   downloadAssets: boolean;
+  // A blank download path keeps assets in the application's managed storage.
+  assetFolder: string | null;
   allowedDomains: string[];
   excludePatterns: string[];
   respectRobotsTxt: boolean;
@@ -86,5 +88,8 @@ export const crawler = {
   pairCapture: () => invoke<Pairing>("crawler_capture_pair"),
   captured: () => invoke<MediaSource[]>("crawler_capture_list"),
   stopCapture: () => invoke<void>("crawler_capture_stop"),
+  // The embedded browser owns its own session and candidate list.
+  openCaptureBrowser: (url: string) => invoke<void>("crawler_open_capture_browser", { url }),
+  captureBrowserSources: () => invoke<MediaSource[]>("crawler_capture_browser_sources"),
   shutdown: () => isTauri() ? invoke<void>("crawler_shutdown") : Promise.resolve(),
 };

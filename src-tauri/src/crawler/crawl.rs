@@ -57,6 +57,8 @@ pub struct Config {
     pub concurrency: usize,
     pub request_delay_millis: u64,
     pub download_assets: bool,
+    // Older jobs and callers keep using managed storage when no folder is supplied.
+    pub asset_folder: Option<PathBuf>,
     pub allowed_domains: Vec<String>,
     pub exclude_patterns: Vec<String>,
     pub respect_robots_txt: bool,
@@ -73,6 +75,7 @@ impl Default for Config {
             concurrency: 2,
             request_delay_millis: 500,
             download_assets: true,
+            asset_folder: None,
             allowed_domains: Vec::new(),
             exclude_patterns: Vec::new(),
             respect_robots_txt: true,
@@ -85,6 +88,11 @@ impl Config {
     /// Validate the crawl budget, seed URLs, proxy, and exclusion rules before queuing work.
     pub fn validate(&self) -> Result<()> {
         if self.start_urls.is_empty()
+            || (self.download_assets
+                && self
+                    .asset_folder
+                    .as_ref()
+                    .is_some_and(|folder| !folder.is_absolute()))
             || self.max_pages == 0
             || !(1..=20).contains(&self.concurrency)
             || self.allowed_domains.iter().any(|domain| {
@@ -409,6 +417,7 @@ impl Runner {
                     self.proxy.as_ref(),
                     self.config.respect_robots_txt,
                     local,
+                    super::diagnostics::Trace::new(false),
                 )
                 .await?,
             );
@@ -416,7 +425,7 @@ impl Runner {
         let browser = slot.as_mut().ok_or(Error::BrowserFailed)?;
         let rendered = tokio::select! {
             _ = self.stop.cancelled() => Err(Error::Cancelled),
-            result = browser.page(&url, false) => result,
+            result = browser.page(&url) => result,
         };
         if rendered.is_err() {
             *slot = None;
@@ -519,7 +528,11 @@ impl Runner {
             .next()
             .unwrap_or_default()
             .to_owned();
-        let directory = self.store.asset_dir(self.id);
+        // Use an isolated job folder at the chosen destination to avoid mixing crawl files.
+        let directory = self.config.asset_folder.as_ref().map_or_else(
+            || self.store.asset_dir(self.id),
+            |folder| folder.join(self.id.to_string()),
+        );
         tokio::fs::create_dir_all(&directory)
             .await
             .map_err(|_| Error::File)?;
@@ -544,7 +557,11 @@ impl Runner {
             self.id,
             &Asset {
                 source_url: url.as_str().into(),
-                local_path: format!("{}/{name}", self.id),
+                // Preserve legacy relative paths for managed assets and report the full custom path.
+                local_path: self.config.asset_folder.as_ref().map_or_else(
+                    || format!("{}/{name}", self.id),
+                    |_| path.to_string_lossy().into_owned(),
+                ),
                 mime_type: mime,
                 size_bytes: length.try_into().map_err(|_| Error::File)?,
             },

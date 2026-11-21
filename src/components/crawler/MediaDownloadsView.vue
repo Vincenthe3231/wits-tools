@@ -10,7 +10,7 @@ import { crawlerError } from "../../const/crawler/errors";
 import { bytes, downloadActive, downloadPercent } from "../../utils/crawler/display";
 
 const props = defineProps<{ workspace: ReturnType<typeof useCrawlerJobs> }>();
-const { native, downloads, captured, captureActive, proxy, refresh } = props.workspace;
+const { native, downloads, captured, browserSources, captureActive, proxy, refresh } = props.workspace;
 
 // Retain each workflow's input while switching modes and keep secrets out of displayed results.
 const mode = ref<"page" | "direct">("page");
@@ -69,6 +69,12 @@ async function submit() {
   try {
     sources.value = await crawler.discover(url.value.trim(), proxy.value.trim() || null);
     searched.value = true;
+    // Report the outcome even when the results section is below the visible form.
+    const count = sources.value.length;
+    notify({
+      severity: count ? "success" : "info",
+      title: count ? `Detected ${count} media ${count === 1 ? "source" : "sources"}` : "No downloadable media detected",
+    });
   } catch (error) {
     if (!(error && typeof error === "object" && "code" in error && error.code === "cancelled")) {
       notify({ severity: "error", title: "Could not detect media", description: crawlerError(error) });
@@ -83,9 +89,26 @@ async function chooseFolder() {
   if (selected) folder.value = selected;
 }
 
+// Use a separate browser when playback needs an interactive session.
+async function openCaptureBrowser() {
+  await action("Could not open capture browser", async () => {
+    await crawler.openCaptureBrowser(url.value.trim());
+    notify({ severity: "info", title: "Play media in the capture browser", description: "Keep the window open while selecting a stream." });
+  });
+}
+
 async function enableCapture() {
   await crawler.startCapture();
   captureActive.value = true;
+}
+
+// Register the installed host and open the listener so the extension can start capture.
+async function registerBridge() {
+  await action("Could not set up capture bridge", async () => {
+    await crawler.registerCapture();
+    await enableCapture();
+    notify({ severity: "success", title: "Capture bridge ready" });
+  });
 }
 
 async function pair() {
@@ -119,8 +142,18 @@ async function stopCapture() {
       <span>{{ mode === "page" ? "Page URL" : "Media file, HLS playlist, or DASH manifest URL" }}</span>
       <input v-model="url" type="url" placeholder="https://example.com" required :disabled="discovering" />
     </label>
+    <!-- Offer an extension-free interactive session alongside automatic detection. -->
+    <button
+      v-if="mode === 'page'"
+      class="self-start"
+      type="button"
+      :disabled="!native || !url.trim() || busy"
+      @click="openCaptureBrowser"
+    >
+      Open in capture browser
+    </button>
     <div v-if="discovering" class="crawler-heading">
-      <p class="crawler-meta" role="status">Waiting for media requests…</p>
+      <p class="crawler-meta" role="status">Checking the page and waiting for player requests…</p>
       <button type="button" @click="action('Could not cancel discovery', crawler.cancelDiscovery)">Cancel discovery</button>
     </div>
     <details class="crawler-stack">
@@ -160,7 +193,7 @@ async function stopCapture() {
   <section v-if="searched || sources.length" class="crawler-stack" aria-labelledby="detected-media">
     <h2 id="detected-media">Detected media</h2>
     <p v-if="!sources.length" class="crawler-notice" role="status">
-      No media requests detected. Try a direct media URL or selected-tab capture.
+      No downloadable media requests detected. If you have the stream link, use Direct media URL.
     </p>
     <ul v-else class="crawler-stack">
       <li v-for="source in sources" :key="source.id" class="crawler-panel crawler-heading">
@@ -176,13 +209,30 @@ async function stopCapture() {
     </ul>
   </section>
 
+  <!-- Present embedded-browser streams independently of extension capture. -->
+  <section v-if="browserSources.length" class="crawler-panel crawler-stack" aria-labelledby="browser-sources">
+    <h2 id="browser-sources">Capture browser streams</h2>
+    <ul class="crawler-stack">
+      <li v-for="source in browserSources" :key="source.id" class="crawler-heading">
+        <div class="crawler-stack crawler-compact">
+          <p class="crawler-url" :title="source.url">{{ source.url }}</p>
+          <p class="crawler-meta">{{ source.kind.toUpperCase() }}</p>
+        </div>
+        <div class="crawler-actions">
+          <button v-if="source.kind !== 'direct'" type="button" :disabled="busy" @click="inspect(source, true)">Inspect formats</button>
+          <button type="button" :disabled="busy" @click="download(source, true)">Download</button>
+        </div>
+      </li>
+    </ul>
+  </section>
+
   <!-- Use the optional extension when playback depends on an already-open browser tab. -->
   <details class="crawler-panel crawler-stack">
     <summary>Selected-tab capture</summary>
     <p class="crawler-meta">Use the WITS Tools Capture extension to detect media in a tab you already have open.</p>
     <div class="crawler-actions">
       <button type="button" :disabled="!native || busy"
-        @click="action('Could not register capture bridge', async () => { await crawler.registerCapture(); notify({ severity: 'success', title: 'Capture bridge registered' }); })">
+        @click="registerBridge">
         Register browser bridge
       </button>
       <button type="button" :disabled="!native || busy || captureActive"

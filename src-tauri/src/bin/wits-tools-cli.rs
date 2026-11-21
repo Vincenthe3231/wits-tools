@@ -328,6 +328,8 @@ async fn run(command: Command, stop: CancellationToken) -> Result<()> {
                 concurrency,
                 request_delay_millis: delay,
                 download_assets: !no_assets,
+                // CLI crawls continue using the application's managed downloads directory.
+                asset_folder: None,
                 allowed_domains: allow_domain,
                 exclude_patterns: exclude,
                 respect_robots_txt: !ignore_robots,

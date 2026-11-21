@@ -16,6 +16,7 @@ use uuid::Uuid;
 use super::{
     Error, Result, browser_path,
     capture::{Capture, Pairing},
+    capture_browser::CaptureBrowser,
     crawl::{self, Config},
     data_dir,
     media::{self, Candidate, Download, Progress, Source},
@@ -26,6 +27,7 @@ use super::{
 pub(crate) struct DesktopState {
     inner: Arc<Mutex<Jobs>>,
     capture: Capture,
+    capture_browser: CaptureBrowser,
 }
 
 #[derive(Default)]
@@ -70,7 +72,19 @@ fn store() -> Result<Store> {
 pub(crate) async fn crawler_start(state: State<'_, DesktopState>, config: Config) -> Result<Uuid> {
     config.validate()?;
     let id = Uuid::new_v4();
-    let store = blocking(store).await?;
+    // Check the selected destination before accepting the job so path errors reach the form.
+    let folder = config
+        .asset_folder
+        .clone()
+        .filter(|_| config.download_assets);
+    let store = blocking(move || {
+        if let Some(folder) = folder {
+            std::fs::create_dir_all(&folder).map_err(|_| Error::File)?;
+            tempfile::NamedTempFile::new_in(folder).map_err(|_| Error::File)?;
+        }
+        store()
+    })
+    .await?;
     let lease = {
         let mut jobs = state.inner.lock().map_err(|_| Error::Busy)?;
         if jobs.closing {
@@ -155,6 +169,9 @@ impl DesktopState {
         source
             .map(|id| {
                 if captured {
+                    if let Some(candidate) = self.capture_browser.source(id)? {
+                        return Ok(candidate);
+                    }
                     return self.capture.source(id, proxy);
                 }
                 self.inner
@@ -167,6 +184,34 @@ impl DesktopState {
             })
             .transpose()
     }
+}
+
+/// Start an isolated WebView with its request observer attached before navigation.
+#[tauri::command]
+pub(crate) async fn crawler_open_capture_browser(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    url: String,
+) -> Result<()> {
+    // A shutdown in progress must not create a new desktop window.
+    if state.inner.lock().map_err(|_| Error::Busy)?.closing {
+        return Err(Error::Busy);
+    }
+    #[cfg(windows)]
+    return super::capture_browser::open(app, state.capture_browser.clone(), &url).await;
+    #[cfg(not(windows))]
+    {
+        let _ = (app, state, url);
+        Err(Error::CaptureUnavailable)
+    }
+}
+
+/// Poll redacted candidates independently of the optional extension session.
+#[tauri::command]
+pub(crate) fn crawler_capture_browser_sources(
+    state: State<'_, DesktopState>,
+) -> Result<Vec<Source>> {
+    state.capture_browser.sources()
 }
 
 #[tauri::command]
@@ -334,7 +379,7 @@ pub(crate) fn crawler_capture_stop(state: State<'_, DesktopState>) {
 
 /// Cancel desktop work before the shell destroys the window. Other CLI jobs own their leases.
 #[tauri::command]
-pub(crate) async fn crawler_shutdown(state: State<'_, DesktopState>) -> Result<()> {
+pub(crate) async fn crawler_shutdown(app: AppHandle, state: State<'_, DesktopState>) -> Result<()> {
     state.capture.stop();
     {
         let mut jobs = state.inner.lock().map_err(|_| Error::Busy)?;
@@ -349,6 +394,10 @@ pub(crate) async fn crawler_shutdown(state: State<'_, DesktopState>) -> Result<(
             stop.cancel();
         }
         jobs.discovered.clear();
+    }
+    // Stop embedded capture before the main window closes.
+    if let Some(window) = app.get_webview_window(super::capture_browser::LABEL) {
+        let _ = window.destroy();
     }
     let _ = tokio::time::timeout(Duration::from_secs(4), async {
         loop {

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "prepare:crawler-browser": "powershell.exe -NoProfile -File scripts/prepare-crawler-browser.ps1",
-    "dev:desktop": "bun run prepare:crawler-browser && vite",
+    "dev:desktop": "bun run prepare:crawler-browser && cargo build --locked --manifest-path src-tauri/Cargo.toml --bin wits-tools-capture-host && vite",
     "build:desktop": "bun run prepare:crawler-browser && bun run build",
     "preview": "vite preview",
     "tauri": "tauri"

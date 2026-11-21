@@ -78,6 +78,46 @@ async fn handler(State(ranges): State<Arc<AtomicUsize>>, request: Request) -> Re
             </script><img src="/image.png"></body></html>"#,
         ),
         "/image.png" => response("image/png", vec![4_u8; LARGE_ASSET]),
+        // Mimic a player mounted after navigation that fetches a manifest only on playback.
+        "/delayed-player" => {
+            let mut page = response(
+                "text/html",
+                r#"<html><body><script>
+              setTimeout(() => {
+                const player = document.createElement("video");
+                player.play = () => {
+                  setTimeout(() => fetch("/stream"), 4500);
+                  return Promise.resolve();
+                };
+                document.body.append(player);
+              }, 1000);
+            </script></body></html>"#,
+            );
+            // Establish a session in Obscura and require the same cookie for replay.
+            page.headers_mut().insert(
+                "set-cookie",
+                "fixture=session; Path=/; HttpOnly".parse().unwrap(),
+            );
+            page
+        }
+        "/stream"
+            if request
+                .headers()
+                .get("cookie")
+                .and_then(|value| value.to_str().ok())
+                .is_none_or(|value| {
+                    !value.split("; ").any(|cookie| cookie == "fixture=session")
+                }) =>
+        {
+            Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Body::empty())
+                .unwrap()
+        }
+        "/stream" => response(
+            "application/vnd.apple.mpegurl",
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=200\n/video.m3u8\n",
+        ),
         "/master.m3u8" => response(
             "application/vnd.apple.mpegurl",
             "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=200\n/video.m3u8\n",
@@ -214,6 +254,30 @@ async fn static_limits_robots_assets_export_and_delete() {
     store.delete(id).unwrap();
     assert!(!store.asset_dir(id).exists());
     assert!(store.list().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn custom_crawl_folder_keeps_downloads_when_job_is_deleted() {
+    let (base, _, _server) = fixture().await;
+    let data = tempfile::tempdir().unwrap();
+    let downloads = tempfile::tempdir().unwrap();
+    let store = Store::open(data.path().into()).unwrap();
+    let mut settings = config(base, Mode::Static);
+    settings.asset_folder = Some(downloads.path().into());
+    settings.max_pages = 1;
+
+    // Verify custom output is reported and survives removal of the stored job.
+    let id = start(&store, settings, PathBuf::new()).await;
+    let results = store.results(id, 0, 0, 1).unwrap();
+    let asset = PathBuf::from(&results.assets[0].local_path);
+    assert_eq!(
+        asset.parent().unwrap(),
+        downloads.path().join(id.to_string())
+    );
+    assert_eq!(std::fs::metadata(&asset).unwrap().len(), LARGE_ASSET as u64);
+    assert!(!store.asset_dir(id).exists());
+    store.delete(id).unwrap();
+    assert!(asset.is_file());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -360,6 +424,42 @@ async fn native_bridge_requires_the_selected_tab() {
 }
 
 /// Run browser tests on demand against the actual checksum-verified release executable.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires the staged Obscura Windows runtime"]
+async fn obscura_detects_and_downloads_media_requested_after_playback() {
+    let browser =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/crawler-browser/obscura.exe");
+    let (base, _, _server) = fixture().await;
+    let sources = media::discover(&browser, &format!("{base}/delayed-player"), None)
+        .await
+        .unwrap();
+    let source = sources
+        .into_iter()
+        .find(|candidate| {
+            let summary = candidate.summary(Uuid::nil());
+            summary.kind == media::Kind::Hls && summary.url.ends_with("/stream")
+        })
+        .unwrap();
+
+    // Pass the detected source through the same transfer path as Media Downloads.
+    let folder = tempfile::tempdir().unwrap();
+    let request = Download {
+        folder: Some(folder.path().into()),
+        ..Download::default()
+    };
+    let output = media::download(
+        request,
+        Some(source),
+        folder.path().into(),
+        CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(std::fs::read(output).unwrap(), b"firstsecond");
+}
+
+/// Confirm normal page crawling still collects rendered DOM independently of media discovery.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires the staged Obscura Windows runtime"]
 async fn obscura_cdp_discovers_hls_and_crawls_both_browser_modes() {

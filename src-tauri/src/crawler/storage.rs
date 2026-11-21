@@ -268,12 +268,14 @@ impl Store {
 
     /// Remove the UUID-scoped files only after excluding active writers.
     pub fn delete(&self, id: Uuid) -> Result<()> {
-        self.job(id)?;
+        let job = self.job(id)?;
         let _lease = self.lease(id)?.ok_or(Error::Busy)?;
+        // Only stage managed downloads. A chosen folder belongs to the user.
+        let managed = job.config.asset_folder.is_none();
         let directory = self.asset_dir(id);
         let staged = directory.with_file_name(format!(".deleting-{id}"));
         // Move first so a failed database operation can put the assets back.
-        if directory.exists() {
+        if managed && directory.exists() {
             fs::rename(&directory, &staged).map_err(|_| Error::File)?;
         }
         let deleted = (|| {
@@ -287,7 +289,7 @@ impl Store {
             }
             Ok(())
         })();
-        if staged.exists() {
+        if managed && staged.exists() {
             if deleted.is_ok() {
                 fs::remove_dir_all(&staged).map_err(|_| Error::File)?;
             } else {

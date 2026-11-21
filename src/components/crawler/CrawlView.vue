@@ -24,6 +24,8 @@ const domains = ref("");
 const exclusions = ref("");
 const respectRobots = ref(true);
 const assets = ref(true);
+// Keep the chosen destination while the user adjusts the crawl settings.
+const assetFolder = ref("");
 const starting = ref(false);
 const busy = ref(false);
 const deleteDialog = ref<HTMLDialogElement>();
@@ -43,8 +45,14 @@ async function action(title: string, run: () => Promise<unknown>) {
   }
 }
 
+// Closing the native picker preserves the existing destination.
+async function chooseFolder() {
+  const folder = await crawler.pickFolder();
+  if (folder) assetFolder.value = folder;
+}
+
 async function start() {
-  if (starting.value) return;
+  if (starting.value || busy.value) return;
   starting.value = true;
   try {
     await crawler.start({
@@ -52,6 +60,7 @@ async function start() {
       maxDepth: maxDepth.value, concurrency: concurrency.value, requestDelayMillis: delay.value,
       proxyUrl: proxy.value.trim() || null, allowedDomains: items(domains.value),
       excludePatterns: items(exclusions.value), respectRobotsTxt: respectRobots.value, downloadAssets: assets.value,
+      assetFolder: assets.value ? assetFolder.value.trim() || null : null,
     });
     await refresh();
   } catch (error) {
@@ -91,7 +100,7 @@ function paginate(kind: "pages" | "assets", step: number) {
   <form class="crawler-panel crawler-stack" @submit.prevent="start">
     <div class="crawler-heading">
       <h1>New crawl</h1>
-      <button class="primary-button" type="submit" :disabled="!native || !seedUrls.trim() || starting">
+      <button class="primary-button" type="submit" :disabled="!native || !seedUrls.trim() || starting || busy">
         {{ starting ? "Starting…" : "Start crawl" }}
       </button>
     </div>
@@ -117,6 +126,25 @@ function paginate(kind: "pages" | "assets", step: number) {
         <span>Max depth</span>
         <input v-model.number="maxDepth" type="number" min="0" max="4294967295" required />
       </label>
+    </div>
+    <!-- Keep the asset location visible alongside the basic crawl settings. -->
+    <div class="crawler-grid">
+      <label class="crawler-field">
+        <span>Download path</span>
+        <input
+          v-model="assetFolder"
+          placeholder="WITS Tools app data"
+          :disabled="!assets || starting || busy"
+        />
+      </label>
+      <button
+        class="crawler-align-end"
+        type="button"
+        :disabled="!native || !assets || starting || busy"
+        @click="action('Could not open folder picker', chooseFolder)"
+      >
+        Choose folder
+      </button>
     </div>
     <details class="crawler-stack">
       <summary>Advanced settings</summary>
@@ -232,7 +260,9 @@ function paginate(kind: "pages" | "assets", step: number) {
   <dialog ref="deleteDialog" aria-labelledby="delete-crawl-title" @close="finishDelete">
     <form class="dialog-content" method="dialog">
       <h2 id="delete-crawl-title">Delete crawl results?</h2>
-      <p>This removes the job and its downloaded assets.</p>
+      <!-- Files in a user-selected destination belong to the user. -->
+      <p v-if="pendingDelete?.config.assetFolder">This removes the job. Files in your chosen folder are kept.</p>
+      <p v-else>This removes the job and its downloaded assets.</p>
       <div class="dialog-actions">
         <button value="cancel" autofocus>Cancel</button>
         <button value="delete" class="primary-button">Delete crawl</button>

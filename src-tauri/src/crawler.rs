@@ -8,6 +8,8 @@ pub mod proxy;
 pub mod storage;
 
 mod browser;
+pub(crate) mod capture_browser;
+mod diagnostics;
 mod network;
 
 use std::path::PathBuf;
@@ -26,6 +28,8 @@ pub enum Error {
     Storage,
     BrowserUnavailable,
     BrowserFailed,
+    // A CDP connection was established, but the target reported a navigation error.
+    BrowserNavigationFailed,
     Network,
     UnsupportedMedia,
     InvalidManifest,

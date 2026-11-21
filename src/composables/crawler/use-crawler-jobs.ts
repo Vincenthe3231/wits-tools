@@ -11,6 +11,8 @@ export function useCrawlerJobs() {
   const jobs = shallowRef<CrawlJob[]>([]);
   const downloads = shallowRef<DownloadJob[]>([]);
   const captured = shallowRef<MediaSource[]>([]);
+  // Embedded capture can remain open while the user visits other workspace views.
+  const browserSources = shallowRef<MediaSource[]>([]);
   const results = shallowRef<CrawlResults>();
   const selected = ref<string>();
   const pageOffset = ref(0);
@@ -37,8 +39,9 @@ export function useCrawlerJobs() {
     if (!native) return Promise.resolve();
     if (currentRefresh) return currentRefresh;
     currentRefresh = (async () => {
-      const [nextJobs, nextDownloads, nextCaptured] = await Promise.all([
+      const [nextJobs, nextDownloads, nextCaptured, nextBrowserSources] = await Promise.all([
         crawler.jobs(), crawler.downloads(), captureActive.value ? crawler.captured() : Promise.resolve([]),
+        crawler.captureBrowserSources(),
       ]);
       for (const job of nextJobs) {
         const previous = jobs.value.find((entry) => entry.id === job.id);
@@ -60,6 +63,7 @@ export function useCrawlerJobs() {
       }
       jobs.value = nextJobs;
       downloads.value = nextDownloads;
+      browserSources.value = nextBrowserSources;
       if (captureActive.value) captured.value = nextCaptured;
       if (selected.value && !nextJobs.some((job) => job.id === selected.value)) await selectJob(undefined);
       await refreshResults();
@@ -90,6 +94,6 @@ export function useCrawlerJobs() {
   onDeactivated(stopPolling);
   onScopeDispose(stopPolling);
 
-  return { native, jobs, downloads, captured, results, selected, pageOffset, assetOffset,
+  return { native, jobs, downloads, captured, browserSources, results, selected, pageOffset, assetOffset,
     captureActive, proxy, refreshError, refresh, refreshResults, selectJob };
 }
