@@ -27,13 +27,35 @@ src/
 | `src/composables/` | Vue composables that use reactivity or lifecycle hooks. Group tool-specific composables by tool. |
 | `src/const/` | Constants grouped by module, with one file per module where useful. |
 | `src/pages/` | Route-level Vue pages grouped by tool. |
-| `src/routes/` | Vue Router setup and route registration. Use dynamic imports for tool pages. |
-| `src/styles/` | Global and reusable stylesheets. When Tailwind is added, import its entry stylesheet from `main.ts`. |
+| `src/routes/` | Home for Vue Router setup and lazy route registrations when the app has multiple tools. |
+| `src/styles/` | Global and reusable stylesheets. `main.ts` imports `styles/app.css`, which loads Tailwind and defines the global design tokens. |
 | `src/utils/` | Helpers such as formatting or validation functions. Group tool-specific helpers by tool. |
 | `src/App.vue` | Root Vue component and app shell. |
 | `src/main.ts` | Vue entry point for mounting the app and registering app-wide dependencies. |
 
-Use consistent tool names across folders. For example, a JSON tool could have a page in `pages/json-tools/`, route registration in `routes/json-tools.ts`, and Tauri invocation wrappers in `api/json-tools.ts`.
+Use the same tool name across folders. The Markdown editor uses `markdown-editor` for its Vue page, components, composables, constants, helpers, and API wrapper. `App.vue` renders the dashboard through Vue Router and retains the editor session across navigation. See [DESIGN.md](DESIGN.md) for token values and UI styling rules.
+
+The dashboard page lives in `src/pages/dashboard/`. Dashboard components, catalog constants, search helpers, and styles live in `components/dashboard/`, `const/dashboard/`, `utils/dashboard/`, and `styles/dashboard/` under `src/`.
+
+## Code formatting and conventions
+
+### Required comments for generated code
+
+- Start every generated source file with a short comment block explaining what the file does and what it owns.
+- Add a meaningful comment above every logical block of generated code, including blocks added to existing files. Explain what the block does and why it matters. Call out constraints, state transitions, ordering, and error handling where they affect the logic.
+- Write comments in plain language using the file's native comment syntax. Describe the block's purpose and behavior in terms a reader can understand without tracing every line.
+
+### Vue, TypeScript, and CSS
+
+- Use two-space indentation, double quotes in TypeScript, and semicolons. Group external imports and project imports with a blank line between them. Separate types, related state, derived state, and functions with blank lines.
+- Order Vue single-file component blocks as `<script setup lang="ts">`, `<template>`, and `<style scoped>` when local CSS is needed. Use PascalCase for Vue component filenames and kebab-case for TypeScript module filenames. Use camelCase for functions and variables, and uppercase snake case for named scalar constants such as `RECOVERY_DELAY`.
+- Put each attribute on its own line when an opening tag wraps. Indent children and leave blank lines between distinct template sections. Keep reusable behavior in composables and stateless helpers in `utils/`. Put typed Tauri calls in `api/`.
+- Keep Tailwind utilities close to the markup. Use scoped CSS for component-specific selectors and animation. Write one CSS declaration per line and leave a blank line between rules. Use semantic tokens for shared roles.
+
+### Rust
+
+- Use `rustfmt` with four-space indentation. Group standard library, external crate, and local imports with blank lines between groups. Keep attributes directly above their item and leave blank lines between distinct declarations and functions.
+- Use snake_case for modules and functions, PascalCase for types, and uppercase snake case for constants. Keep command handlers thin, use typed errors in Rust, and map results to the frontend contract at the command boundary. Follow the module conventions below as a tool grows.
 
 ## Tauri structure
 
@@ -47,6 +69,8 @@ Use consistent tool names across folders. For example, a JSON tool could have a 
 | `src-tauri/capabilities/` | Tauri capability definitions and permissions. |
 
 ### Rust module conventions
+
+The dashboard filters a frontend tool catalog and uses browser storage for appearance. Add a module under `src-tauri/src/dashboard/` when a dashboard operation needs native persistence or system access.
 
 Start each tool in one Rust module within the existing Cargo package. As the tool grows, split it by operation or workflow. Keep Tauri commands thin and have them call ordinary Rust functions that can be reused and tested without launching the desktop app.
 
@@ -79,7 +103,11 @@ Split large modules around named responsibilities. For example, an import workfl
 
 ## Development and release
 
-Run these commands from the project root.
+Run these commands from the project root. To launch the desktop app for development, run `bun install` once, then:
+
+```powershell
+bun run tauri dev
+```
 
 | Command | Purpose |
 | --- | --- |
@@ -88,5 +116,9 @@ Run these commands from the project root.
 | `bun run tauri dev` | Run the desktop app with the Vite development server. |
 | `bun run build` | Type-check the frontend and build it into `dist/`. |
 | `bun run tauri build` | Run the frontend build and package the desktop release. |
+| `bun run tauri build --no-bundle` | Build the release executable without installers. |
+| `bun test` | Run the frontend tests. |
+| `cargo fmt --manifest-path src-tauri/Cargo.toml --check` | Check Rust formatting. |
+| `cargo test --locked --manifest-path src-tauri/Cargo.toml` | Run the Rust tests. |
 
-The release currently builds the frontend as one Vite application. Lazy routes let the webview load tool pages on demand. Independent tool builds would require separate build targets and a step that assembles their outputs for Tauri.
+On Windows, the release executable is `src-tauri/target/release/wits-tools.exe`. The bundled release also writes the NSIS setup executable and MSI installer under `src-tauri/target/release/bundle/`. The release builds the frontend as one Vite application.

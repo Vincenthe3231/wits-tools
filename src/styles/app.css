@@ -15,8 +15,24 @@
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
 }
 
+/* Prefer the system palette unless the toolbar sets an explicit appearance. */
+:root[data-appearance="light"] {
+  color-scheme: light;
+}
+
+:root[data-appearance="dark"] {
+  color-scheme: dark;
+  --surface-editor: #17211d;
+  --surface-toolbar: #202e28;
+  --surface-selected: #344a3f;
+  --text-primary: #eaf2eb;
+  --text-muted: #b5c6bb;
+  --accent-strong: #a9d3ba;
+  --text-on-accent: #17211d;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-appearance="light"]) {
     --surface-editor: #17211d;
     --surface-toolbar: #202e28;
     --surface-selected: #344a3f;

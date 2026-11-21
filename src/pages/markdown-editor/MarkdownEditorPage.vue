@@ -1,29 +1,38 @@
+<!-- Presents the retained Markdown session and handles editor-local prompts. -->
 <script setup lang="ts">
-import { nextTick, onMounted, onScopeDispose, ref } from "vue";
+import { computed, nextTick, onMounted, onScopeDispose, ref, watch } from "vue";
 import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 
 import { markdownEditor } from "../../api/markdown-editor";
+import NavigationTransition from "../../components/NavigationTransition.vue";
 import SourceEditor from "../../components/markdown-editor/SourceEditor.vue";
 import VisualEditor from "../../components/markdown-editor/VisualEditor.vue";
 import { useDocumentSession } from "../../composables/markdown-editor/use-document-session";
+
+const props = defineProps<{ active: boolean }>();
 
 const visual = ref<InstanceType<typeof VisualEditor>>();
 const source = ref<InstanceType<typeof SourceEditor>>();
 const discardDialog = ref<HTMLDialogElement>();
 const restoreDialog = ref<HTMLDialogElement>();
-const recoveryName = ref("");
+type RecoveryState =
+  | { phase: "Unchecked" | "Checking" | "Resolved" }
+  | { phase: "Available"; name: string };
+
+const recovery = ref<RecoveryState>({ phase: "Unchecked" });
+const replacement = ref<"new" | "open">();
+const recoveryName = computed(() =>
+  recovery.value.phase === "Available" ? recovery.value.name : "",
+);
 const visualReason = ref("");
 const nativeApp = isTauri();
-let unlisten: UnlistenFn | undefined;
-let disposed = false;
 let decision: ((value: string) => void) | undefined;
 
 const session = useDocumentSession(() => visual.value?.serialize());
 const { name, mode, buffer, busy, revision, error, recoveryError, externalChange, status, dirty } =
   session;
 
+// Validate Markdown before activating Visual and serialize Visual changes before returning to Source.
 function switchMode(target: "source" | "visual", focus = true) {
   if (target === "visual") {
     if (mode.value === "visual") {
@@ -49,11 +58,13 @@ function switchMode(target: "source" | "visual", focus = true) {
   }
 }
 
+// Prefer Visual for a new session when it can safely represent the document.
 function openVisualByDefault() {
   visualReason.value = "";
   switchMode("visual", false);
 }
 
+// Pause a document replacement until the user chooses how to handle current edits.
 function confirmChanges() {
   const dialog = discardDialog.value;
   if (!dialog) {
@@ -66,31 +77,36 @@ function confirmChanges() {
   });
 }
 
+// Resume the replacement flow with the dialog result and default to cancel.
 function resolveChanges() {
   decision?.(discardDialog.value?.returnValue ?? "cancel");
   decision = undefined;
 }
 
-async function mayReplace() {
+// Allow replacement only after a successful save or an explicit discard choice.
+async function mayReplace(action: "new" | "open") {
   if (!dirty.value) {
     return true;
   }
+  replacement.value = action;
   const result = await confirmChanges();
+  replacement.value = undefined;
   if (result === "save") {
     return session.save();
   }
   return result === "discard";
 }
 
+// Keep the current document and recovery data until the replacement actually succeeds.
 function changeDocument(action: "new" | "open") {
   return session.run(async () => {
-    if (!(await mayReplace())) {
+    if (!(await mayReplace(action))) {
       return;
     }
     await session.settleRecovery();
     try {
       if (action === "open") {
-        const document = await markdownEditor.open();
+        const document = await session.open();
         if (!document) {
           return;
         }
@@ -108,12 +124,14 @@ function changeDocument(action: "new" | "open") {
   });
 }
 
+// Run toolbar and shortcut saves through the same operation guard.
 function saveDocument(saveAs = false) {
   return session.run(async () => {
     await session.save(saveAs);
   });
 }
 
+// Resolve the startup prompt only after Rust restores or clears the snapshot.
 function recoveryAction(restore: boolean) {
   return session.run(async () => {
     if (restore) {
@@ -121,14 +139,16 @@ function recoveryAction(restore: boolean) {
     } else {
       await markdownEditor.reset();
     }
-    recoveryName.value = "";
+    recovery.value = { phase: "Resolved" };
     restoreDialog.value?.close();
     openVisualByDefault();
   });
 }
 
+// Keep editor shortcuts inactive on other routes and while a modal owns input.
 function shortcuts(event: KeyboardEvent) {
   if (
+    !props.active ||
     (!event.ctrlKey && !event.metaKey) ||
     event.altKey ||
     event.isComposing ||
@@ -152,6 +172,7 @@ function shortcuts(event: KeyboardEvent) {
   }
 }
 
+// Check startup recovery once, when the retained editor first mounts.
 onMounted(async () => {
   window.addEventListener("keydown", shortcuts);
   if (!nativeApp) {
@@ -159,38 +180,67 @@ onMounted(async () => {
     return;
   }
 
-  const currentWindow = getCurrentWindow();
+  recovery.value = { phase: "Checking" };
   await session.run(async () => {
-    unlisten = await currentWindow.onCloseRequested((event) => {
-      event.preventDefault();
-      void session.run(async () => {
-        if (restoreDialog.value?.open) {
-          await currentWindow.destroy();
-        } else if (await mayReplace()) {
-          await session.settleRecovery();
-          await markdownEditor.reset();
-          await currentWindow.destroy();
-        }
-      });
-    });
-    if (disposed) {
-      unlisten?.();
-      return;
-    }
-
-    recoveryName.value = (await markdownEditor.recoveryInfo()) ?? "";
-    if (recoveryName.value) {
+    const draftName = await markdownEditor.recoveryInfo();
+    if (draftName !== null) {
+      recovery.value = { phase: "Available", name: draftName };
       restoreDialog.value?.showModal();
     } else {
+      recovery.value = { phase: "Resolved" };
       openVisualByDefault();
     }
   });
 });
 
-onScopeDispose(() => {
-  disposed = true;
-  unlisten?.();
-  window.removeEventListener("keydown", shortcuts);
+// Keep the editor DOM and history alive while the dashboard is visible.
+watch(
+  () => props.active,
+  (active) => {
+    if (!active) {
+      visual.value?.dismissInteractions();
+    }
+
+    if (!active && nativeApp && dirty.value) {
+      void session.queueRecovery();
+    }
+  },
+);
+
+// Let the shell own the dialog and keep the editor responsible for saving or resetting its session.
+async function requestClose(ask: () => Promise<"save" | "discard" | "cancel">) {
+  if (busy.value) {
+    return false;
+  }
+
+  // An unread or unresolved startup snapshot must survive closing the app.
+  if (!dirty.value) {
+    return true;
+  }
+
+  let authorized = false;
+  await session.run(async () => {
+    const choice = await ask();
+    if (choice === "cancel" || (choice === "save" && !(await session.save()))) {
+      return;
+    }
+
+    // Drain recovery writes before clearing persisted data on an authorized close.
+    await session.settleRecovery();
+    await markdownEditor.reset();
+    authorized = true;
+  });
+  return authorized;
+}
+
+onScopeDispose(() => window.removeEventListener("keydown", shortcuts));
+
+defineExpose({
+  requestClose,
+  navigationBlocked: computed(
+    () => busy.value || replacement.value !== undefined || recovery.value.phase === "Available",
+  ),
+  closeError: error,
 });
 </script>
 
@@ -258,20 +308,26 @@ onScopeDispose(() => {
     </div>
 
     <section class="editor-body" aria-label="Markdown document">
-      <SourceEditor
-        v-if="mode === 'source'"
-        :key="revision"
-        ref="source"
-        :model-value="buffer"
-        :locked="busy"
-        @update:model-value="session.editSource"
-      />
-      <VisualEditor
-        v-show="mode === 'visual'"
-        ref="visual"
-        :locked="busy"
-        @edited="session.editVisual"
-      />
+      <!-- Fade in Source after the shared Markdown buffer is ready. -->
+      <NavigationTransition kind="panel">
+        <SourceEditor
+          v-if="mode === 'source'"
+          :key="revision"
+          ref="source"
+          :model-value="buffer"
+          :locked="busy"
+          @update:model-value="session.editSource"
+        />
+      </NavigationTransition>
+      <!-- Reveal Visual without changing its existing mounted lifecycle. -->
+      <NavigationTransition kind="panel">
+        <VisualEditor
+          v-show="mode === 'visual'"
+          ref="visual"
+          :locked="busy"
+          @edited="session.editVisual"
+        />
+      </NavigationTransition>
     </section>
 
     <dialog ref="discardDialog" aria-labelledby="discard-title" @close="resolveChanges">
@@ -312,7 +368,7 @@ onScopeDispose(() => {
 .editor-workspace {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
 }
 

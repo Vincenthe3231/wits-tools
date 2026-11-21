@@ -1,8 +1,10 @@
+/** Defines the Markdown editor's typed calls to the native desktop backend. */
 import { invoke } from "@tauri-apps/api/core";
 
 export interface OpenDocument {
   name: string;
   markdown: string;
+  fileBacked: boolean;
 }
 
 export const markdownEditor = {

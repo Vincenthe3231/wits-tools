@@ -1,3 +1,4 @@
+<!-- Hosts Tiptap, Visual editing controls, and transient editor interactions. -->
 <script setup lang="ts">
 import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from "vue";
 import { Editor, EditorContent } from "@tiptap/vue-3";
@@ -8,6 +9,7 @@ import {
 } from "../../utils/markdown-editor/markdown-format";
 import { useAnimatedCaret } from "../../composables/markdown-editor/use-animated-caret";
 import { activeBlock, blockActions, moveBlock } from "../../utils/markdown-editor/visual-blocks";
+import NavigationTransition from "../NavigationTransition.vue";
 import EditorCaret from "./EditorCaret.vue";
 
 const props = defineProps<{ locked: boolean }>();
@@ -232,7 +234,16 @@ watch([slash, activeOption], () => {
 });
 
 onScopeDispose(() => editor.value?.destroy());
+// Clear transient UI on route suspension while preserving the Tiptap document and history.
+function dismissInteractions() {
+  slash.value = undefined;
+  closeBlockMenu(false);
+  linkDialog.value?.close();
+  hide();
+}
+
 defineExpose({
+  dismissInteractions,
   prepare,
   serialize: () => editor.value?.getMarkdown(),
   focus: () => editor.value?.commands.focus(),
@@ -286,7 +297,10 @@ defineExpose({
       </div>
       <EditorCaret :caret="caret" :trail="trail" @trail-finished="clearTrail" />
 
-      <div v-if="slash" class="slash-menu" @mousedown.prevent>
+      <!-- Animate the command menu while the editor keeps keyboard focus. -->
+      <NavigationTransition kind="menu">
+
+      </NavigationTransition>      <div v-if="slash" class="slash-menu" @mousedown.prevent>
         <div class="slash-title">Insert block</div>
         <div v-if="!choices.length" role="status">No matching blocks</div>
         <div v-else id="slash-commands" role="listbox" aria-label="Insert block">

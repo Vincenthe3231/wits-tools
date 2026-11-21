@@ -1,0 +1,104 @@
+/* Defines reusable motion for route content, editor panels, navigation, and overlays. */
+
+/* Match travel and duration to the size and role of the surface. */
+:root {
+  --motion-page: 180ms;
+  --motion-panel: 140ms;
+  --motion-sidebar: 160ms;
+  --motion-menu: 120ms;
+  --motion-enter-ease: cubic-bezier(0.2, 0.7, 0.25, 1);
+}
+
+/* Animate entry only so hidden views release their layout and focus immediately. */
+@media (prefers-reduced-motion: no-preference) {
+  .navigation-page-enter-active,
+  .navigation-panel-enter-active,
+  .navigation-sidebar-enter-active,
+  .navigation-menu-enter-active {
+    transition: opacity var(--navigation-duration) var(--motion-enter-ease),
+      transform var(--navigation-duration) var(--motion-enter-ease);
+  }
+
+  .navigation-page-enter-active {
+    --navigation-duration: var(--motion-page);
+  }
+
+  .navigation-panel-enter-active {
+    --navigation-duration: var(--motion-panel);
+  }
+
+  .navigation-sidebar-enter-active {
+    --navigation-duration: var(--motion-sidebar);
+  }
+
+  .navigation-menu-enter-active {
+    --navigation-duration: var(--motion-menu);
+  }
+
+  .navigation-page-enter-from,
+  .navigation-panel-enter-from,
+  .navigation-sidebar-enter-from,
+  .navigation-menu-enter-from {
+    opacity: 0;
+  }
+
+  .navigation-page-enter-from {
+    transform: translateY(8px);
+  }
+
+  .navigation-sidebar-enter-from {
+    transform: translateX(-8px);
+  }
+
+  .navigation-menu-enter-from {
+    transform: translateY(4px);
+  }
+
+  /* Move the closing sidebar over the expanded content while it fades out. */
+  .workspace-sidebar.navigation-sidebar-leave-active {
+    position: absolute;
+    z-index: 3;
+    inset: 0 auto 0 0;
+    width: clamp(10.5rem, 24vw, 16rem);
+    pointer-events: none;
+    transition: opacity 100ms ease-in, transform 100ms ease-in;
+  }
+
+  .navigation-sidebar-leave-to {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+
+  /* Preserve the full-width navigation strip at narrow window sizes. */
+  @media (max-width: 680px) {
+    .workspace-sidebar.navigation-sidebar-leave-active {
+      inset: 0 0 auto;
+      width: auto;
+    }
+  }
+
+  /* Native disclosure and dialog behavior stays in charge of dismissal and focus. */
+  .block-menu[open] > .block-menu-items,
+  dialog[open] > .dialog-content {
+    animation: navigation-overlay-in var(--motion-menu) var(--motion-enter-ease) both;
+  }
+
+  dialog[open]::backdrop {
+    animation: navigation-backdrop-in var(--motion-menu) var(--motion-enter-ease) both;
+  }
+}
+
+/* Fade and lift incoming overlay content without moving its surrounding layout. */
+@keyframes navigation-overlay-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Fade the modal scrim separately so it never shifts with the dialog. */
+@keyframes navigation-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}

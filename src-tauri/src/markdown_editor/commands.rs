@@ -1,3 +1,5 @@
+//! Connects the editor's IPC commands to native dialogs, file state, and draft recovery.
+
 use std::{path::PathBuf, sync::MutexGuard};
 
 use tauri::{AppHandle, Manager, State};
@@ -8,6 +10,7 @@ use super::{
     recovery,
 };
 
+/// Replace the open file only after the picker succeeds and the selected file is readable.
 #[tauri::command]
 pub async fn editor_open(app: AppHandle) -> EditorResult<Option<OpenDocument>> {
     let Some(path) = app
@@ -29,6 +32,7 @@ pub async fn editor_open(app: AppHandle) -> EditorResult<Option<OpenDocument>> {
     Ok(Some(document))
 }
 
+/// Save to the existing path or ask the user for a new destination.
 #[tauri::command]
 pub async fn editor_save(
     app: AppHandle,
@@ -36,6 +40,7 @@ pub async fn editor_save(
     save_as: bool,
 ) -> EditorResult<Option<String>> {
     let state = app.state::<EditorState>();
+    // Release the session lock before yielding control to a native file picker.
     let original = current_file(&state)?.clone();
     let selected = if save_as || original.is_none() {
         let file_name = original.as_ref().map(|file| files::name(&file.path));
@@ -59,12 +64,14 @@ pub async fn editor_save(
     };
 
     let mut current = current_file(&state)?;
+    // Update the tracked file version only after the write succeeds.
     let saved = files::save(selected.as_deref(), current.as_ref(), &markdown)?;
     let name = files::name(&saved.path);
     *current = Some(saved);
     Ok(Some(name))
 }
 
+/// Clear persisted recovery before releasing the current file association.
 #[tauri::command]
 pub fn editor_reset(app: AppHandle, state: State<EditorState>) -> EditorResult<()> {
     let mut current = current_file(&state)?;
@@ -73,11 +80,13 @@ pub fn editor_reset(app: AppHandle, state: State<EditorState>) -> EditorResult<(
     Ok(())
 }
 
+/// Report the draft name so Vue can offer a recovery choice before loading its content.
 #[tauri::command]
 pub fn editor_recovery_info(app: AppHandle) -> EditorResult<Option<String>> {
     Ok(recovery::read(&recovery_path(&app)?)?.map(|draft| draft.name))
 }
 
+/// Restore both the draft contents and their original file association, if present.
 #[tauri::command]
 pub fn editor_restore(app: AppHandle, state: State<EditorState>) -> EditorResult<OpenDocument> {
     let mut current = current_file(&state)?;
@@ -85,11 +94,13 @@ pub fn editor_restore(app: AppHandle, state: State<EditorState>) -> EditorResult
         .ok_or_else(|| EditorError::new("recovery", "The recovery draft is unavailable."))?;
     *current = draft.original;
     Ok(OpenDocument {
+        file_backed: current.is_some(),
         name: draft.name,
         markdown: draft.markdown,
     })
 }
 
+/// Persist unsaved Markdown with its file association, or clear the snapshot when requested.
 #[tauri::command]
 pub async fn editor_update_recovery(app: AppHandle, markdown: Option<String>) -> EditorResult<()> {
     let state = app.state::<EditorState>();
@@ -113,6 +124,7 @@ pub async fn editor_update_recovery(app: AppHandle, markdown: Option<String>) ->
     )
 }
 
+/// Store each installation's draft in the application-local data directory.
 fn recovery_path(app: &AppHandle) -> EditorResult<PathBuf> {
     app.path()
         .app_local_data_dir()
@@ -120,6 +132,7 @@ fn recovery_path(app: &AppHandle) -> EditorResult<PathBuf> {
         .map_err(|error| EditorError::new("recovery", error.to_string()))
 }
 
+/// Guard access to the file version shared by save and recovery commands.
 fn current_file(state: &EditorState) -> EditorResult<MutexGuard<'_, Option<FileVersion>>> {
     state
         .0

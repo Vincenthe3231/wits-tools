@@ -1,3 +1,5 @@
+//! Validates Markdown paths, tracks file fingerprints, and stages atomic writes.
+
 use std::{
     fs::File,
     io::{Read, Write},
@@ -63,6 +65,7 @@ fn read_bytes(path: &Path) -> EditorResult<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Load the original text and fingerprint the same bytes for later conflict detection.
 pub(super) fn open(path: &Path) -> EditorResult<(OpenDocument, FileVersion)> {
     validate_extension(path)?;
     let path = path.canonicalize().map_err(EditorError::io)?;
@@ -73,6 +76,7 @@ pub(super) fn open(path: &Path) -> EditorResult<(OpenDocument, FileVersion)> {
 
     Ok((
         OpenDocument {
+            file_backed: true,
             name: name(&path),
             markdown,
         },
@@ -80,6 +84,7 @@ pub(super) fn open(path: &Path) -> EditorResult<(OpenDocument, FileVersion)> {
     ))
 }
 
+/// Resolve the destination and check the original file version before replacing it.
 pub(super) fn save(
     selected: Option<&Path>,
     original: Option<&FileVersion>,
@@ -168,6 +173,7 @@ fn replace(staged: NamedTempFile, path: &Path, overwrite: bool) -> EditorResult<
         .map_err(|error| EditorError::io(error.error))
 }
 
+/// Use the same atomic staging as document saves for recovery snapshots.
 pub(super) fn write_recovery(path: &Path, bytes: &[u8]) -> EditorResult<()> {
     replace(stage(path, bytes)?, path, true)
 }
