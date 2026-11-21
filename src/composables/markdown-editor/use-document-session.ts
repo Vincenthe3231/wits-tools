@@ -1,17 +1,15 @@
 /** Coordinates document edits, native file actions, and ordered recovery writes. */
 import { computed, onScopeDispose, ref } from "vue";
 
-import { markdownEditor, type OpenDocument } from "../../api/markdown-editor";
+import { isTauri } from "@tauri-apps/api/core";
+
+import { EditorFailure, markdownEditor, type OpenDocument } from "../../api/markdown-editor";
 import { formatVisualMarkdown, markdownImageSources } from "../../utils/markdown-editor/markdown-format";
 
-const RECOVERY_DELAY = 500;
+import { editorNotice } from "../../const/markdown-editor/errors";
+import { notify } from "../use-notifications";
 
-function errorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "message" in error) {
-    return String(error.message);
-  }
-  return typeof error === "string" ? error : "The editor action could not be completed.";
-}
+const RECOVERY_DELAY = 500;
 
 export function useDocumentSession(serializeVisual: () => string | undefined) {
   const name = ref("Untitled");
@@ -52,17 +50,33 @@ export function useDocumentSession(serializeVisual: () => string | undefined) {
       return;
     }
 
-    const markdown = serializeVisual();
+    let markdown: string | undefined;
+    try {
+      markdown = serializeVisual();
+    } catch (cause) {
+      throw new EditorFailure("visualRoundTripFailed", "visual", cause);
+    }
     if (markdown === undefined) {
-      throw new Error("The Visual editor could not produce Markdown. Your edits are still open.");
+      throw new EditorFailure("visualRoundTripFailed", "visual");
     }
 
     buffer.value = formatVisualMarkdown(markdown, buffer.value);
     visualEdited.value = false;
   }
 
+  // Report a recovery outage once, keeping its status visible until a later write succeeds.
+  function reportRecovery(cause: unknown) {
+    const code = cause instanceof EditorFailure ? cause.code : "recoveryFailed";
+    const failure = new EditorFailure(code, "recoveryWrite", cause);
+    const notice = editorNotice(failure, "recoveryWrite");
+    if (!recoveryError.value) notify(notice);
+    recoveryError.value = `${notice.title}. ${notice.description}`;
+    snapshotState.value = "Failed";
+  }
+
   // Order snapshot writes and clears so a late write cannot restore a discarded draft.
   function queueRecovery() {
+    if (!isTauri()) return recoveryQueue;
     clearTimeout(recoveryTimer);
     recoveryTimer = undefined;
     try {
@@ -75,13 +89,11 @@ export function useDocumentSession(serializeVisual: () => string | undefined) {
           recoveryError.value = "";
           snapshotState.value = recoveryTimer ? "Pending" : "Idle";
         } catch (cause) {
-          snapshotState.value = "Failed";
-          recoveryError.value = "Draft recovery could not be updated. " + errorMessage(cause);
+          reportRecovery(cause);
         }
       });
     } catch (cause) {
-      snapshotState.value = "Failed";
-      recoveryError.value = errorMessage(cause);
+      reportRecovery(cause);
     }
     return recoveryQueue;
   }
@@ -121,15 +133,11 @@ export function useDocumentSession(serializeVisual: () => string | undefined) {
     try {
       await action();
     } catch (cause) {
-      error.value = errorMessage(cause);
-      if (
-        cause &&
-        typeof cause === "object" &&
-        "code" in cause &&
-        cause.code === "externalChange"
-      ) {
-        externalChange.value = true;
-      }
+      const fallback = phase === "Opening" ? "open" : phase === "Saving" ? "save" : "reset";
+      const notice = editorNotice(cause, fallback);
+      error.value = `${notice.title}. ${notice.description}`;
+      notify(notice);
+      if (notice.code === "externalChange") externalChange.value = true;
     } finally {
       operation.value = "Idle";
     }
@@ -165,8 +173,8 @@ export function useDocumentSession(serializeVisual: () => string | undefined) {
       documentKind.value = "FileBacked";
       saved.value = buffer.value;
       externalChange.value = false;
-      status.value = "Saved";
-      await queueRecovery();
+      notify({ severity: "success", title: "Document saved" });
+
       return true;
     } finally {
       operation.value = previousOperation;

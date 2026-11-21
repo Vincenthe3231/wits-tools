@@ -3,6 +3,7 @@
 import { computed, nextTick, onScopeDispose, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import AppToaster from "./components/AppToaster.vue";
 import { useWindowClose } from "./composables/use-window-close";
 import WorkspaceAppearance from "./components/dashboard/WorkspaceAppearance.vue";
 import WorkspaceIcon from "./components/dashboard/WorkspaceIcon.vue";
@@ -71,6 +72,9 @@ const closeError = useWindowClose(async () => editor.value?.requestClose(askClos
 </script>
 
 <template>
+  <!-- Keep notifications mounted across dashboard and tool routes. -->
+  <AppToaster />
+
   <div class="workspace-shell" :class="{ 'workspace-shell-collapsed': !sidebarOpen }">
     <!-- The same navigation stays available as the user moves between tools. -->
     <NavigationTransition kind="sidebar">
@@ -108,7 +112,7 @@ const closeError = useWindowClose(async () => editor.value?.requestClose(askClos
 
       <!-- Keep close errors visible even when the editor requesting the save is hidden. -->
       <p v-if="closeError" class="px-3" role="alert">{{ closeError }}</p>
-      <p v-if="!enterEditor && editor?.closeError" class="px-3" role="alert">
+      <p v-if="!enterEditor && editor?.closeError" class="px-3 text-status-error-text">
         {{ editor.closeError }}
       </p>
 

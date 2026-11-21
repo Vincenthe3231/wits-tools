@@ -8,7 +8,7 @@ use std::{
 
 use tempfile::NamedTempFile;
 
-use super::{EditorError, EditorResult, FileVersion, OpenDocument};
+use super::{EditorError, EditorErrorCode, EditorResult, FileVersion, OpenDocument};
 
 // Keep the same bounded UTF-8 reads as WitsFlow's file editor.
 const MAX_TEXT_BYTES: usize = 8 * 1024 * 1024;
@@ -29,7 +29,7 @@ fn validate_extension(path: &Path) -> EditorResult<()> {
     }
 
     Err(EditorError::new(
-        "extension",
+        EditorErrorCode::UnsupportedFileType,
         "Choose a .md or .markdown file.",
     ))
 }
@@ -40,7 +40,7 @@ pub(super) fn validate_size(markdown: &str) -> EditorResult<()> {
     }
 
     Err(EditorError::new(
-        "size",
+        EditorErrorCode::FileTooLarge,
         "Markdown files can be up to 8 MiB.",
     ))
 }
@@ -48,7 +48,10 @@ pub(super) fn validate_size(markdown: &str) -> EditorResult<()> {
 fn read_bytes(path: &Path) -> EditorResult<Vec<u8>> {
     let file = File::open(path).map_err(EditorError::io)?;
     if !file.metadata().map_err(EditorError::io)?.is_file() {
-        return Err(EditorError::new("fileType", "Choose a regular file."));
+        return Err(EditorError::new(
+            EditorErrorCode::UnsupportedFileType,
+            "Choose a regular file.",
+        ));
     }
 
     let mut bytes = Vec::new();
@@ -57,7 +60,7 @@ fn read_bytes(path: &Path) -> EditorResult<Vec<u8>> {
         .map_err(EditorError::io)?;
     if bytes.len() > MAX_TEXT_BYTES {
         return Err(EditorError::new(
-            "size",
+            EditorErrorCode::FileTooLarge,
             "Markdown files can be up to 8 MiB.",
         ));
     }
@@ -71,8 +74,12 @@ pub(super) fn open(path: &Path) -> EditorResult<(OpenDocument, FileVersion)> {
     let path = path.canonicalize().map_err(EditorError::io)?;
     let bytes = read_bytes(&path)?;
     let fingerprint = blake3::hash(&bytes).to_hex().to_string();
-    let markdown = String::from_utf8(bytes)
-        .map_err(|_| EditorError::new("encoding", "The selected file is not UTF-8 Markdown."))?;
+    let markdown = String::from_utf8(bytes).map_err(|_| {
+        EditorError::new(
+            EditorErrorCode::InvalidEncoding,
+            "The selected file is not UTF-8 Markdown.",
+        )
+    })?;
 
     Ok((
         OpenDocument {
@@ -94,9 +101,12 @@ pub(super) fn save(
     validate_size(markdown)?;
     let path = match selected {
         Some(path) => save_destination(path)?,
-        None => original
-            .map(|file| file.path.clone())
-            .ok_or_else(|| EditorError::new("destination", "Choose a location with Save As."))?,
+        None => original.map(|file| file.path.clone()).ok_or_else(|| {
+            EditorError::new(
+                EditorErrorCode::InvalidDestination,
+                "Choose a location with Save As.",
+            )
+        })?,
     };
 
     let same_file = original.filter(|file| file.path == path);
@@ -117,7 +127,7 @@ pub(super) fn save(
                 .is_some_and(|bytes| blake3::hash(bytes).to_hex().as_str() == file.fingerprint)
         {
             return Err(EditorError::new(
-                "externalChange",
+                EditorErrorCode::ExternalChange,
                 "The original file changed or moved. Use Save As to keep your edits in another file.",
             ));
         }
@@ -152,15 +162,18 @@ fn save_destination(path: &Path) -> EditorResult<PathBuf> {
 }
 
 fn invalid_destination() -> EditorError {
-    EditorError::new("destination", "Choose a valid Markdown file location.")
+    EditorError::new(
+        EditorErrorCode::InvalidDestination,
+        "Choose a valid Markdown file location.",
+    )
 }
 
 // Adapt WitsFlow's same-directory staging and flush before atomic replacement.
 fn stage(path: &Path, bytes: &[u8]) -> EditorResult<NamedTempFile> {
     let parent = path.parent().ok_or_else(invalid_destination)?;
-    let mut staged = NamedTempFile::new_in(parent).map_err(EditorError::io)?;
-    staged.write_all(bytes).map_err(EditorError::io)?;
-    staged.as_file().sync_all().map_err(EditorError::io)?;
+    let mut staged = NamedTempFile::new_in(parent).map_err(EditorError::write)?;
+    staged.write_all(bytes).map_err(EditorError::write)?;
+    staged.as_file().sync_all().map_err(EditorError::write)?;
     Ok(staged)
 }
 
@@ -173,7 +186,7 @@ fn replace(staged: NamedTempFile, path: &Path, overwrite: bool) -> EditorResult<
 
     result
         .map(|_| ())
-        .map_err(|error| EditorError::io(error.error))
+        .map_err(|error| EditorError::write(error.error))
 }
 
 /// Use the same atomic staging as document saves for recovery snapshots.
@@ -220,7 +233,7 @@ mod tests {
             let error = save(target, Some(&version), "draft", |_| Ok(()))
                 .err()
                 .unwrap();
-            assert_eq!(error.code, "externalChange");
+            assert_eq!(error.code, EditorErrorCode::ExternalChange);
         }
 
         save(Some(&copy), Some(&version), "draft", |_| Ok(())).unwrap();

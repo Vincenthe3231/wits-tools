@@ -5,23 +5,24 @@ import { ref, type ShallowRef } from "vue";
 
 import {
   clipboardImages,
-  imageImportMessage,
   imageMarkdown,
   stageImage,
 } from "../../utils/markdown-editor/image-attachments";
 
-// Keep image feedback local and map the insertion point while the files are being staged.
+import { EditorFailure } from "../../api/markdown-editor";
+import { editorNotice } from "../../const/markdown-editor/errors";
+import { notify } from "../use-notifications";
+
+// Reserve one image insertion at a time and map the insertion point while the files are being staged.
 export function useVisualImages(editor: ShallowRef<Editor | undefined>, locked: () => boolean) {
   const busy = ref(false);
-  const message = ref("");
 
   // Keep each imported image in a paragraph so the existing handle moves the whole image.
-  async function insert(files: File[]) {
+  async function insert(files: File[], operation: "pasteImage" | "insertImage" = "insertImage") {
     const current = editor.value;
     if (!current || locked() || busy.value || !files.length) return;
 
     busy.value = true;
-    message.value = "";
     let bookmark = current.state.selection.getBookmark();
     const map = ({ transaction }: { transaction: Transaction }) => {
       bookmark = bookmark.map(transaction.mapping);
@@ -31,7 +32,7 @@ export function useVisualImages(editor: ShallowRef<Editor | undefined>, locked: 
     try {
       const blocks = [];
       for (const file of files) {
-        const attrs = await stageImage(file);
+        const attrs = await stageImage(file, operation);
         blocks.push({ type: "paragraph", content: [{ type: "image", attrs }] });
       }
 
@@ -42,7 +43,7 @@ export function useVisualImages(editor: ShallowRef<Editor | undefined>, locked: 
         }
       }
     } catch (error) {
-      message.value = imageImportMessage(error);
+      notify(editorNotice(error, operation));
     } finally {
       current.off("transaction", map);
       busy.value = false;
@@ -55,7 +56,7 @@ export function useVisualImages(editor: ShallowRef<Editor | undefined>, locked: 
     if (!files.length) return false;
 
     event.preventDefault();
-    void insert(files);
+    void insert(files, "pasteImage");
     return true;
   }
 
@@ -97,11 +98,11 @@ export function useVisualImages(editor: ShallowRef<Editor | undefined>, locked: 
         "image/png": bitmap,
         "text/plain": new Blob([markdown], { type: "text/plain" }),
       })]).catch(() => {
-        message.value = "The Markdown reference was copied. The image could not be copied as a bitmap.";
+        notify(editorNotice(new EditorFailure("clipboardWriteFailed", "copyImage"), "copyImage"));
       });
     }
     return true;
   }
 
-  return { busy, message, insert, paste, copy };
+  return { busy, insert, paste, copy };
 }

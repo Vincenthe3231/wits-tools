@@ -130,3 +130,12 @@ In Visual mode, use **Insert image** to choose a local PNG, JPEG, GIF, or WebP, 
 On save, imported images go into a `wits-images/` folder beside the Markdown file. Save As copies these attachments with the document. Keep the folder alongside the Markdown when moving or sharing it.
 
 In Source mode, paste a clipboard image with **Ctrl+V** to insert its Markdown reference at the cursor. You can also write a relative reference such as `![Screenshot](./screenshots/login.png)` for an image already inside the document folder. Switch to Visual to preview it. When moving or saving a copy of the Markdown to another folder, copy any manually linked image folders yourself.
+
+## Errors and notifications
+
+Rust tools own their native error codes. Markdown Editor defines those codes in `src-tauri/src/markdown_editor/error.rs` and validates them at the IPC boundary in `src/api/markdown-editor.ts`. Put user-facing messages in `src/const/markdown-editor/errors.ts`. Keep native diagnostics out of user-facing copy.
+
+Report a failure from the action that owns it. Use `src/composables/use-notifications.ts` to publish it through the shared `AppToaster.vue`. Treat picker cancellation as a normal outcome. Keep recovery controls available in the owning view, including **Save As** for an external file conflict. Use the status tokens and notification rules in [DESIGN.md](DESIGN.md).
+
+- If image paste fails in Source or Visual mode, show one error toast and leave the Markdown unchanged.
+- If draft recovery writes keep failing, show one warning toast and keep the recovery status visible. A successful write clears the status and allows a later outage to trigger a new toast.

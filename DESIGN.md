@@ -42,6 +42,12 @@ CSS variables use the `--status-<kind>-<role>` pattern. For an error notice, app
 
 Use a clear title and a recognizable icon as well as color. Keep controls keyboard-accessible, pair decorative icons with visible text, and respect reduced motion. Announce an event once, even when its toast and inline recovery control appear together.
 
+### Toast behavior
+
+- Stack toasts at the top right, below the app toolbar, with up to three visible at a time.
+- Set the default duration to 8 seconds for errors and warnings and 5 seconds for info and success.
+- Place a plain **×** inside the top-right corner of each toast. Give it a 24 px hit area, a visible keyboard focus outline, and the accessible name “Dismiss notification.” Reserve space beside the control so text can wrap.
+
 ## UI packages
 
 Use Vue Sonner for the shared toast host and Reka UI for headless controls such as menus, popovers, and dialogs when adding or updating those controls. Use WITS Tools tokens to style both. For future UI work, reuse packages and components already in the repository. Add a UI package when a concrete requirement calls for a capability the existing packages do not provide.

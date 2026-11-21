@@ -6,7 +6,7 @@ use std::{
     path::{Component, Path},
 };
 
-use super::{EditorError, EditorResult, files};
+use super::{EditorError, EditorErrorCode, EditorResult, files};
 
 const MAX_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 const IMAGE_DIRECTORY: &str = "wits-images";
@@ -23,7 +23,7 @@ fn extension(bytes: &[u8]) -> EditorResult<&'static str> {
         "webp"
     } else {
         return Err(EditorError::new(
-            "imageType",
+            EditorErrorCode::UnsupportedImageType,
             "Choose a PNG, JPEG, GIF, or WebP image.",
         ));
     };
@@ -35,7 +35,7 @@ fn extension(bytes: &[u8]) -> EditorResult<&'static str> {
 fn read(path: &Path) -> EditorResult<Vec<u8>> {
     if !fs::metadata(path).map_err(EditorError::io)?.is_file() {
         return Err(EditorError::new(
-            "imageType",
+            EditorErrorCode::UnsupportedImageType,
             "Choose a regular image file.",
         ));
     }
@@ -54,7 +54,7 @@ fn read(path: &Path) -> EditorResult<Vec<u8>> {
 fn validate(bytes: &[u8]) -> EditorResult<&'static str> {
     if bytes.len() > MAX_IMAGE_BYTES {
         return Err(EditorError::new(
-            "imageSize",
+            EditorErrorCode::ImageTooLarge,
             "Images can be up to 16 MiB each.",
         ));
     }
@@ -99,7 +99,7 @@ pub(super) fn preview(root: &Path, parent: Option<&Path>, src: &str) -> EditorRe
     }
 
     Err(EditorError::new(
-        "imagePath",
+        EditorErrorCode::ImagePreviewUnavailable,
         "The local image is unavailable.",
     ))
 }
@@ -120,7 +120,7 @@ pub(super) fn publish(
         fs::create_dir_all(&folder).map_err(EditorError::io)?;
         if folder.canonicalize().map_err(EditorError::io)? != folder {
             return Err(EditorError::new(
-                "imagePath",
+                EditorErrorCode::ImagePreviewUnavailable,
                 "Choose a destination with a regular image folder.",
             ));
         }
@@ -130,7 +130,7 @@ pub(super) fn publish(
         let expected = format!("{}.{}", blake3::hash(&bytes).to_hex(), extension(&bytes)?);
         if name != expected {
             return Err(EditorError::new(
-                "imageChanged",
+                EditorErrorCode::ImageChanged,
                 "An attached image has changed on disk.",
             ));
         }
@@ -141,7 +141,7 @@ pub(super) fn publish(
                 continue;
             }
             return Err(EditorError::new(
-                "imageConflict",
+                EditorErrorCode::ImageConflict,
                 "A different image already exists at the destination.",
             ));
         }

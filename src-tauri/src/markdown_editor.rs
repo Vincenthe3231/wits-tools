@@ -9,7 +9,7 @@ use std::{path::PathBuf, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use error::{EditorError, EditorResult};
+use error::{EditorError, EditorErrorCode, EditorResult};
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

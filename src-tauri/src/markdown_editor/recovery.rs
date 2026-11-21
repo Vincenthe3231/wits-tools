@@ -1,6 +1,6 @@
 use std::{fs, io::ErrorKind, path::Path};
 
-use super::{EditorError, EditorResult, RecoveryDraft, files};
+use super::{EditorError, EditorErrorCode, EditorResult, RecoveryDraft, files};
 
 pub(super) fn read(path: &Path) -> EditorResult<Option<RecoveryDraft>> {
     match fs::read(path) {
@@ -29,7 +29,7 @@ pub(super) fn clear(path: &Path) -> EditorResult<()> {
 
 fn serialization_error(error: serde_json::Error) -> EditorError {
     EditorError::new(
-        "recovery",
+        EditorErrorCode::RecoveryFailed,
         format!("Could not process the recovery draft. {error}"),
     )
 }

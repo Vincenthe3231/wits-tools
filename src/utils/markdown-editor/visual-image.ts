@@ -1,7 +1,8 @@
 /** Defines the Markdown image node and its local attachment preview. */
 import { Node } from "@tiptap/core";
 
-import { imageTransfer } from "../../api/markdown-editor";
+import { EditorFailure, imageTransfer } from "../../api/markdown-editor";
+import { editorNotice } from "../../const/markdown-editor/errors";
 import { imageMarkdown } from "./image-attachments";
 
 // Keep the original URL in the document and derive a separate, temporary preview URL.
@@ -52,7 +53,11 @@ export const VisualImage = Node.create({
             }
           })
           .catch(() => {
-            if (!destroyed) dom.title = "Image file is unavailable.";
+            // Keep missing-image feedback on the affected node without creating a toast per image.
+            if (!destroyed) {
+              const failure = new EditorFailure("imagePreviewUnavailable", "previewImage");
+              dom.title = editorNotice(failure, "previewImage").description;
+            }
           });
       } else {
         dom.title = "External image reference";

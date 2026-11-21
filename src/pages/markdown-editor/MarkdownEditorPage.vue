@@ -3,11 +3,14 @@
 import { computed, nextTick, onMounted, onScopeDispose, ref, watch } from "vue";
 import { isTauri } from "@tauri-apps/api/core";
 
-import { markdownEditor } from "../../api/markdown-editor";
+import { EditorFailure, markdownEditor } from "../../api/markdown-editor";
 import NavigationTransition from "../../components/NavigationTransition.vue";
 import SourceEditor from "../../components/markdown-editor/SourceEditor.vue";
 import VisualEditor from "../../components/markdown-editor/VisualEditor.vue";
 import { useDocumentSession } from "../../composables/markdown-editor/use-document-session";
+
+import { editorNotice } from "../../const/markdown-editor/errors";
+import { notify } from "../../composables/use-notifications";
 
 const props = defineProps<{ active: boolean }>();
 
@@ -49,15 +52,29 @@ function switchMode(target: "source" | "visual", focus = true) {
     if (mode.value === "visual") {
       return;
     }
-    visualReason.value = visual.value?.prepare(buffer.value) ?? "";
-    if (!visual.value || visualReason.value) {
+    if (!visual.value) return;
+
+    const issue = visual.value.prepare(buffer.value);
+    visualReason.value = issue?.reason ?? "";
+    if (issue) {
+      // Automatic mode selection can fall back to Source quietly for unsupported files.
+      if (focus || issue.code === "visualRoundTripFailed") {
+        const notice = editorNotice(new EditorFailure(issue.code, "visual"), "visual");
+        notify({ ...notice, description: issue.reason, id: "markdown-visual-compatibility" });
+      }
       return;
     }
     mode.value = "visual";
   } else {
     // End pointer capture and dismiss Visual overlays before hiding the pane.
     visual.value?.dismissInteractions();
-    session.materialize();
+    try {
+      session.materialize();
+    } catch (cause) {
+      // Keep the current Visual document available if it cannot serialize.
+      notify(editorNotice(cause, "visual"));
+      return;
+    }
     mode.value = "source";
     revision.value += 1;
     visualReason.value = "";
@@ -149,6 +166,7 @@ function recoveryAction(restore: boolean) {
   return session.run(async () => {
     if (restore) {
       session.adopt(await markdownEditor.restore(), true);
+      notify({ severity: "info", title: "Draft restored", description: "Your draft is ready to edit." });
     } else {
       await markdownEditor.reset();
     }
@@ -310,14 +328,20 @@ defineExpose({
 
     <div v-if="error || recoveryError || visualReason || !nativeApp" class="workspace-notices">
       <p v-if="!nativeApp">Open WITS Tools on your desktop to use local files and recovery.</p>
-      <div v-if="error" class="workspace-error" role="alert">
+      <div
+        v-if="error"
+        class="workspace-error border-s-2"
+        :class="externalChange
+          ? 'border-s-status-warning-indicator bg-status-warning-surface text-status-warning-text'
+          : 'border-s-status-error-indicator bg-status-error-surface text-status-error-text'"
+      >
         <span>{{ error }}</span>
         <button v-if="externalChange" type="button" :disabled="working" @click="saveDocument(true)">
           Save As
         </button>
       </div>
-      <p v-if="recoveryError" role="alert">{{ recoveryError }}</p>
-      <p v-if="visualReason" id="visual-reason" role="status">{{ visualReason }}</p>
+      <p v-if="recoveryError" class="text-status-warning-text">{{ recoveryError }}</p>
+      <p v-if="visualReason" id="visual-reason" class="text-status-warning-text">{{ visualReason }}</p>
     </div>
 
     <section class="editor-body" aria-label="Markdown document">
@@ -430,6 +454,7 @@ defineExpose({
 }
 
 .workspace-error {
+  padding: 0.35rem 0.6rem;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

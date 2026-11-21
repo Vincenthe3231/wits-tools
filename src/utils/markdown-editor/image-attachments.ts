@@ -1,5 +1,5 @@
 /** Shares image clipboard detection, native staging, and Markdown formatting between editor modes. */
-import { imageTransfer } from "../../api/markdown-editor";
+import { EditorFailure, imageTransfer } from "../../api/markdown-editor";
 
 // Avoid reading oversized clipboard images into IPC memory.
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
@@ -16,20 +16,18 @@ export function clipboardImages(clipboard: DataTransfer | null): File[] {
 }
 
 // Stage bytes before returning a path so either mode can preview and save the same attachment.
-export async function stageImage(file: File) {
-  if (file.size > MAX_IMAGE_BYTES) throw new Error("Images can be up to 16 MiB each.");
-  const src = await imageTransfer.stage(await file.arrayBuffer());
-  const alt = file.name.replace(/\.[^.]+$/, "") || "Pasted image";
-  return { src, alt };
-}
+export async function stageImage(file: File, operation: "pasteImage" | "insertImage") {
+  if (file.size > MAX_IMAGE_BYTES) throw new EditorFailure("imageTooLarge", operation);
 
-// Native failures arrive as structured IPC errors while browser failures use Error objects.
-export function imageImportMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object" && error && "message" in error) return String(error.message);
-  return "The image could not be inserted.";
+  try {
+    const src = await imageTransfer.stage(await file.arrayBuffer(), operation);
+    const alt = file.name.replace(/\.[^.]+$/, "") || "Pasted image";
+    return { src, alt };
+  } catch (cause) {
+    if (cause instanceof EditorFailure && cause.code !== "unexpected") throw cause;
+    throw new EditorFailure("imageStageFailed", operation, cause);
+  }
 }
-
 // Escape Markdown punctuation while preserving the decoded destination and optional title.
 export function imageMarkdown(
   node: { attrs?: { src?: string; alt?: string; title?: string | null } },

@@ -6,6 +6,7 @@ import { Editor, EditorContent } from "@tiptap/vue-3";
 import {
   checkedVisualContent,
   markdownExtensions,
+  type VisualIssue,
 } from "../../utils/markdown-editor/markdown-format";
 import { useAnimatedCaret } from "../../composables/markdown-editor/use-animated-caret";
 import { useVisualImages } from "../../composables/markdown-editor/use-visual-images";
@@ -22,7 +23,7 @@ const editor = shallowRef<Editor>();
 
 // Reuse the current Visual selection for the picker and clipboard commands.
 const images = useVisualImages(editor, () => props.locked);
-const { busy: importingImage, message: imageMessage } = images;
+const { busy: importingImage } = images;
 const imagePicker = ref<HTMLInputElement>();
 
 // Reset the input so selecting the same file twice still triggers insertion.
@@ -112,7 +113,7 @@ function slashKey(event: KeyboardEvent) {
   return true;
 }
 
-function prepare(markdown: string): string | undefined {
+function prepare(markdown: string): VisualIssue | undefined {
   const next = new Editor({
     extensions: markdownExtensions(),
     editable: !props.locked,
@@ -165,7 +166,7 @@ function prepare(markdown: string): string | undefined {
   const result = checkedVisualContent(next, markdown);
   if ("reason" in result) {
     next.destroy();
-    return result.reason;
+    return result;
   }
 
   if (result.content.content?.length) {
@@ -314,9 +315,6 @@ defineExpose({
       </button>
     </div>
 
-    <!-- Announce import or clipboard errors without interrupting typing. -->
-    <p class="image-message" role="status">{{ imageMessage }}</p>
-
     <div ref="surface" class="visual-surface" :class="{ 'has-animated-caret': caret }">
       <div class="visual-scroll" @scroll="positionSlash">
         <EditorContent :editor="editor" class="visual-content" />
@@ -379,7 +377,7 @@ defineExpose({
 <style scoped>
 .visual-editor {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
 }
@@ -584,16 +582,4 @@ defineExpose({
   outline-offset: 2px;
 }
 
-/* Keep operation feedback readable against the editor surface in both themes. */
-.image-message {
-  margin: 0;
-  padding: 0.25rem 1rem;
-  color: var(--text-primary);
-  background: var(--surface-editor);
-}
-
-/* Collapse the feedback row when there is no message. */
-.image-message:empty {
-  padding: 0;
-}
 </style>

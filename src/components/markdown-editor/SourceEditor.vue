@@ -12,10 +12,11 @@ import { sourceHighlighting } from "../../const/markdown-editor/source-highlight
 import { useAnimatedCaret } from "../../composables/markdown-editor/use-animated-caret";
 import {
   clipboardImages,
-  imageImportMessage,
   imageMarkdown,
   stageImage,
 } from "../../utils/markdown-editor/image-attachments";
+import { editorNotice } from "../../const/markdown-editor/errors";
+import { notify } from "../../composables/use-notifications";
 import EditorCaret from "./EditorCaret.vue";
 
 const props = defineProps<{ modelValue: string; locked: boolean }>();
@@ -27,7 +28,6 @@ let composing = false;
 
 // Keep the clipboard operation separate from ordinary CodeMirror text edits.
 const pastingImage = ref(false);
-const imageError = ref("");
 let pasteRange: { from: number; to: number } | undefined;
 
 // Claim a bitmap paste before CodeMirror can consume any text carried alongside it.
@@ -44,12 +44,11 @@ function pasteImage(event: ClipboardEvent, current: EditorView): boolean {
 async function insertImages(current: EditorView, files: File[]) {
   pasteRange = current.state.selection.main;
   pastingImage.value = true;
-  imageError.value = "";
 
   try {
     const references: string[] = [];
     for (const file of files) {
-      references.push(imageMarkdown({ attrs: await stageImage(file) }));
+      references.push(imageMarkdown({ attrs: await stageImage(file, "pasteImage") }));
     }
 
     if (view !== current || !pasteRange || props.locked) return;
@@ -64,7 +63,7 @@ async function insertImages(current: EditorView, files: File[]) {
       userEvent: "input.paste",
     });
   } catch (error) {
-    imageError.value = imageImportMessage(error);
+    notify(editorNotice(error, "pasteImage"));
   } finally {
     pasteRange = undefined;
     pastingImage.value = false;
@@ -158,8 +157,6 @@ defineExpose({ focus: () => view?.focus(), pastingImage });
 
 <template>
   <div ref="surface" class="source-editor" :class="{ 'has-animated-caret': caret }">
-    <!-- Report a failed import without inserting fallback clipboard text. -->
-    <p class="source-image-error" role="status">{{ imageError }}</p>
     <div ref="container" class="source-content" />
     <EditorCaret :caret="caret" :trail="trail" />
   </div>
@@ -172,21 +169,9 @@ defineExpose({ focus: () => view?.focus(), pastingImage });
   min-height: 0;
 }
 
-/* Give clipboard feedback its own space above the scrollable source editor. */
 .source-editor {
   position: relative;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-}
-
-.source-image-error {
-  margin: 0;
-  color: var(--text-primary);
-}
-
-.source-image-error:not(:empty) {
-  padding: 0.25rem 1rem;
 }
 
 .source-content :deep(.cm-editor) {

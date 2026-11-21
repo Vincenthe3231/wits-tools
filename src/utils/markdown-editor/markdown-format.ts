@@ -101,12 +101,18 @@ export function markdownExtensions() {
   ];
 }
 
-type VisualContent = { content: JSONContent } | { reason: string };
+// Keep the compatibility reason available for both the toast and the persistent mode hint.
+export type VisualIssue = {
+  code: "visualUnsupportedContent" | "visualRoundTripFailed";
+  reason: string;
+};
+
+type VisualContent = { content: JSONContent } | VisualIssue;
 
 export function checkedVisualContent(editor: Editor, markdown: string): VisualContent {
   const source = markdown.replace(/^\uFEFF/, "");
   if (/^(---|\+\+\+)[ \t]*\r?\n/.test(source)) {
-    return { reason: "This document contains front matter. Edit it in Source mode." };
+    return { code: "visualUnsupportedContent", reason: "This document contains front matter. Edit it in Source mode." };
   }
 
   try {
@@ -115,12 +121,12 @@ export function checkedVisualContent(editor: Editor, markdown: string): VisualCo
       unsupported ??= sourceOnly.get(token.type);
     });
     if (unsupported) {
-      return { reason: `This document contains ${unsupported}. Edit it in Source mode.` };
+      return { code: "visualUnsupportedContent", reason: `This document contains ${unsupported}. Edit it in Source mode.` };
     }
 
     const manager = editor.markdown;
     if (!manager) {
-      return { reason: "The Visual editor could not load." };
+      return { code: "visualRoundTripFailed", reason: "The Visual editor could not load." };
     }
 
     const content = manager.parse(source);
@@ -136,10 +142,11 @@ export function checkedVisualContent(editor: Editor, markdown: string): VisualCo
       return { content };
     }
   } catch {
-    return { reason: "This Markdown could not be converted safely. Edit it in Source mode." };
+    return { code: "visualRoundTripFailed", reason: "This Markdown could not be converted safely. Edit it in Source mode." };
   }
 
   return {
+    code: "visualRoundTripFailed",
     reason:
       "Visual mode would change this document’s content or structure. Edit it in Source mode.",
   };
