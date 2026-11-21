@@ -50,7 +50,9 @@ Use a clear title and a recognizable icon as well as color. Keep controls keyboa
 
 ## UI packages
 
-Use Vue Sonner for the shared toast host and Reka UI for headless controls such as menus, popovers, and dialogs when adding or updating those controls. Use WITS Tools tokens to style both. For future UI work, reuse packages and components already in the repository. Add a UI package when a concrete requirement calls for a capability the existing packages do not provide.
+Use Vue Sonner for the shared toast host and Reka UI for headless controls such as menus, popovers, and dialogs when adding or updating those controls. Use WITS Tools tokens to style both.
+
+All UI work must use only components and UI packages already in the repository. Reuse or compose existing components and installed primitives. Add a new component or UI package only when the user explicitly requests it or when a concrete requirement cannot be met with the existing ones. Limit the exception to that requirement and use WITS Tools design tokens.
 
 ## Typography and motion
 

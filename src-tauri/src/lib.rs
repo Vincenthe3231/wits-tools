@@ -1,3 +1,5 @@
+//! Registers the native commands and plugins for the desktop workspace.
+mod api_tester;
 mod markdown_editor;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -16,6 +18,8 @@ pub fn run() {
             markdown_editor::commands::editor_recovery_info,
             markdown_editor::commands::editor_restore,
             markdown_editor::commands::editor_update_recovery,
+            // Keep HTTP execution behind the API Tester command.
+            api_tester::api_tester_send,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

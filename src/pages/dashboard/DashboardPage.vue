@@ -16,7 +16,7 @@ const matches = computed(() => searchTools(props.query));
     <section class="dashboard-intro" aria-labelledby="dashboard-title">
       <div>
         <h1 id="dashboard-title">Your toolkit</h1>
-        <p>Open a tool to work with files on this device.</p>
+        <p>Open a tool to edit Markdown or test an API.</p>
         <RouterLink class="dashboard-primary" :to="{ name: 'markdown-editor' }">
           Open Markdown Editor
           <WorkspaceIcon name="arrow" />

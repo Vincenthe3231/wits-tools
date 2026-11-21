@@ -1,4 +1,4 @@
-<!-- Retains the editor across routes and hosts window-close confirmation. -->
+<!-- Hosts workspace navigation, retained tool sessions, and window-close confirmation. -->
 <script setup lang="ts">
 import { computed, nextTick, onScopeDispose, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -9,6 +9,7 @@ import WorkspaceAppearance from "./components/dashboard/WorkspaceAppearance.vue"
 import WorkspaceIcon from "./components/dashboard/WorkspaceIcon.vue";
 import WorkspaceSidebar from "./components/dashboard/WorkspaceSidebar.vue";
 import NavigationTransition from "./components/NavigationTransition.vue";
+import { tools } from "./const/dashboard/tools";
 import MarkdownEditorPage from "./pages/markdown-editor/MarkdownEditorPage.vue";
 import "./styles/dashboard/workspace.css";
 
@@ -17,6 +18,11 @@ type CloseChoice = "save" | "discard" | "cancel";
 
 const route = useRoute();
 const editor = ref<InstanceType<typeof MarkdownEditorPage>>();
+
+// Keep search on the dashboard and derive tool names from the shared catalog.
+const isDashboard = computed(() => route.name === "dashboard");
+const toolName = computed(() => tools.find((tool) => tool.routeName === route.name)?.name);
+
 // Preserve the catalog filter while a tool is open.
 const toolQuery = ref("");
 // Keep navigation visible by default and give its toggle a stable focus target.
@@ -101,12 +107,12 @@ const closeError = useWindowClose(async () => editor.value?.requestClose(askClos
         >
           <WorkspaceIcon name="sidebar" />
         </button>
-        <label v-if="!enterEditor" class="workspace-search workspace-toolbar-search">
+        <label v-if="isDashboard" class="workspace-search workspace-toolbar-search">
           <WorkspaceIcon name="search" />
           <span class="sr-only">Search the tool catalog</span>
           <input v-model="toolQuery" type="search" placeholder="Search tools…" />
         </label>
-        <span v-else class="workspace-location">Markdown Editor</span>
+        <span v-else class="workspace-location">{{ toolName }}</span>
         <WorkspaceAppearance />
       </header>
 
@@ -116,11 +122,18 @@ const closeError = useWindowClose(async () => editor.value?.requestClose(askClos
         {{ editor.closeError }}
       </p>
 
-      <!-- Hide the retained editor instead of remounting it when the catalog is visible. -->
+      <!-- Cache the API draft for this window and retain the editor's close handling. -->
       <div class="workspace-content">
         <RouterView v-slot="{ Component }">
           <NavigationTransition kind="page" direction="left">
-            <component :is="Component" v-if="!enterEditor" :key="route.path" :query="toolQuery" />
+            <KeepAlive include="ApiTesterPage">
+              <component
+                :is="Component"
+                v-if="!enterEditor"
+                :key="route.path"
+                v-bind="isDashboard ? { query: toolQuery } : {}"
+              />
+            </KeepAlive>
           </NavigationTransition>
         </RouterView>
         <NavigationTransition kind="page" direction="right">

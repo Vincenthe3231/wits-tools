@@ -9,4 +9,11 @@ export const tools = [
     keywords: "writing documents notes md text",
     icon: "document",
   },
+  {
+    routeName: "api-tester",
+    name: "API Tester",
+    description: "Send HTTP requests, inspect responses, and check status and timing.",
+    keywords: "api http https rest request response curl test status headers",
+    icon: "arrow",
+  },
 ] as const;
