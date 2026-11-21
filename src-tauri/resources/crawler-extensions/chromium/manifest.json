@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "WITS Tools Capture",
+  "version": "0.1.1",
+  "description": "Captures media requests from one selected tab for WITS Tools.",
+  "minimum_chrome_version": "102",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "webRequest",
+    "nativeMessaging"
+  ],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "WITS Tools Capture",
+    "default_popup": "popup.html"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3nRJYEN39jWqF3/8XSv5DtElWs1EoAUJ54KEAzfOncU+7qI/oDraDiKwP9OVe7WFBL2sAWf7NSSRf6YxgzrFnSho3FoI3S3x67ZiNeuATbor0PwuJpDs7M0HOVLS2TXYDMm4wmLMHzH8SNuSj5oDa5deAayWRdirDFfWKgsTzsmuHjlkzZJQaoA4ffGvjUHJp19KoIdk7Dzoz3zSVPCgFUuO+NgFNKqyxM3eBJ+iX7dzRklAJaYK3j1Z0IX6jc6a00ODDUmrdyWCzAi3h+uc5qF3e6ug8rOrUorS9uXpUbHIRUxq305EOeaZehFhcj3fzBFwKrN9+EJyb8LhXcA4tQIDAQAB"
+}

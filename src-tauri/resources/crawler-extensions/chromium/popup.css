@@ -1,0 +1,77 @@
+/* Styles the selected-tab controls with the WITS Tools palette in both appearances. */
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --surface-editor: #fefaf3;
+  --surface-selected: #b1d3b9;
+  --text-primary: #24312b;
+  --accent-strong: #24483d;
+  --status-error-text: #72262c;
+  background: var(--surface-editor);
+  color: var(--text-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-editor: #17211d;
+    --surface-selected: #344a3f;
+    --text-primary: #eaf2eb;
+    --accent-strong: #a9d3ba;
+    --status-error-text: #ffdedb;
+  }
+}
+
+/* Keep the controls readable and keyboard accessible inside the browser popup. */
+body {
+  width: 280px;
+  margin: 0;
+}
+
+main {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+h1, p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 16px;
+}
+
+p, label {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+textarea, button {
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+  padding: 8px;
+  color: var(--text-primary);
+  background: var(--surface-editor);
+}
+
+button {
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent-strong);
+  border-radius: 5px;
+  color: var(--text-primary);
+  background: var(--surface-selected);
+  cursor: pointer;
+}
+
+:is(button, textarea):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+#error {
+  color: var(--status-error-text);
+}

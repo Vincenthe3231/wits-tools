@@ -16,4 +16,11 @@ export const tools = [
     keywords: "api http https rest request response curl test status headers",
     icon: "arrow",
   },
+  {
+    routeName: "crawler",
+    name: "Crawler",
+    description: "Crawl websites, inspect collected assets, and download media.",
+    keywords: "website links scrape html proxy media download video hls dash",
+    icon: "globe",
+  },
 ] as const;

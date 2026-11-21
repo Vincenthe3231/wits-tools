@@ -15,5 +15,11 @@ export const router = createRouter({
       name: "api-tester",
       component: () => import("../pages/api-tester/ApiTesterPage.vue"),
     },
+    // Load the crawler workspace on demand like other native tools.
+    {
+      path: "/tools/crawler",
+      name: "crawler",
+      component: () => import("../pages/crawler/CrawlerPage.vue"),
+    },
   ],
 });

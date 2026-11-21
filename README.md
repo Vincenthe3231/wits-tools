@@ -131,6 +131,38 @@ On save, imported images go into a `wits-images/` folder beside the Markdown fil
 
 In Source mode, paste a clipboard image with **Ctrl+V** to insert its Markdown reference at the cursor. You can also write a relative reference such as `![Screenshot](./screenshots/login.png)` for an image already inside the document folder. Switch to Visual to preview it. When moving or saving a copy of the Markdown to another folder, copy any manually linked image folders yourself.
 
+## Crawler and Media Downloads
+
+Open **Crawler** in the dashboard. **Crawl** collects pages within the seed URL paths by default. Expand **Advanced settings** to allow additional domains, enter exclusions, or set a proxy. **Auto** uses the Rust HTTP crawler and launches Obscura for sparse or failed pages. **Browser** uses Obscura for page traversal and **Static** runs without a browser. Results and assets are stored under the WITS Tools app data directory. **Export JSON** writes the selected job and its pages and assets.
+
+In **Media Downloads**, paste a page URL to detect media requests or select **Direct media URL** to download a known file, HLS playlist, or DASH manifest. Choose a detected source to save it. The default destination is Windows Downloads. Segmented HLS output uses `.ts` and DASH saves the selected video representation as `.mp4`. Use selected-tab capture for sites whose player or signed-in browser session is needed to discover a stream.
+
+### Optional selected-tab capture
+
+The installed `crawler-extensions/` directory contains extensions for Chrome and Edge (`chromium/`) and Firefox Developer Edition and Zen (`firefox/manifest.json`). Use the browser’s unpacked or temporary extension controls to load the matching extension.
+
+1. In **Crawler > Media Downloads > Selected-tab capture**, choose **Register browser bridge** and **Enable capture**.
+2. Open **WITS Tools Capture** in the tab containing the media, start capture, and play the media.
+3. Select a detected source in WITS Tools. Use **Stop capture** to release the active session.
+
+If the native browser bridge is unavailable, choose **Generate pairing code** and paste it into the extension’s manual pairing view. The code is valid for initial pairing for five minutes.
+
+### Windows x64 browser and CLI
+
+The desktop build hooks stage Obscura v0.2.7 and its required DLLs with a verified SHA-256. Allow the first build to retrieve the pinned archive using Windows PowerShell. Run `bun run prepare:crawler-browser` to stage it explicitly. The generated files live in `src-tauri/resources/crawler-browser/`. Keep the `crawler-browser/` folder beside the application and console binaries when copying a portable build.
+
+The installers include `wits-tools-cli.exe`. Use `--help` after any command to view its options.
+
+```powershell
+.\wits-tools-cli.exe crawl https://example.com --mode static
+.\wits-tools-cli.exe export <job-id> --output crawl.json
+.\wits-tools-cli.exe info https://example.com/playlist.m3u8
+.\wits-tools-cli.exe download https://example.com/playlist.m3u8 --output .\downloads
+.\wits-tools-cli.exe proxy run
+```
+
+The opt-in CLI proxy listens on loopback. It can observe ordinary HTTP media and tunnels HTTPS without decrypting it.
+
 ## Errors and notifications
 
 Rust tools own their native error codes. Markdown Editor defines those codes in `src-tauri/src/markdown_editor/error.rs` and validates them at the IPC boundary in `src/api/markdown-editor.ts`. Put user-facing messages in `src/const/markdown-editor/errors.ts`. Keep native diagnostics out of user-facing copy.

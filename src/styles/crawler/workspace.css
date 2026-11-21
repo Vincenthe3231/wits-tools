@@ -1,0 +1,193 @@
+/* Styles both crawler views with the workspace's existing semantic tokens. */
+.crawler-workspace {
+  height: 100%;
+  min-width: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.crawler-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-block-end: 1rem;
+  border-bottom: 1px solid var(--text-muted);
+}
+
+.crawler-tabs [data-state="active"] {
+  border-bottom: 2px solid var(--accent-strong);
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.crawler-tab-content {
+  display: grid;
+  gap: 1rem;
+  max-width: 66rem;
+}
+
+.crawler-tab-content[data-state="inactive"] {
+  display: none;
+}
+
+.crawler-panel,
+.crawler-notice {
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 0.6rem;
+  background: var(--surface-toolbar);
+}
+
+.crawler-heading,
+.crawler-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  min-width: 0;
+}
+
+.crawler-heading {
+  justify-content: space-between;
+}
+
+.crawler-heading > .crawler-stack {
+  flex: 1 1 17rem;
+  min-width: 0;
+}
+
+.crawler-workspace :is(h1, h2, h3, summary) {
+  font-weight: 650;
+}
+
+.crawler-workspace h1 {
+  font-size: 1.2rem;
+}
+
+.crawler-stack {
+  display: grid;
+  align-content: start;
+  gap: 0.65rem;
+}
+
+.crawler-compact {
+  gap: 0.15rem;
+}
+
+.crawler-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 0.65rem;
+}
+
+.crawler-advanced {
+  margin-block: 0.65rem;
+}
+
+.crawler-field {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.crawler-field :is(input, textarea, select) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 0.35rem;
+  background: var(--surface-editor);
+  color: var(--text-primary);
+}
+
+.crawler-field :is(textarea, select):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.crawler-workspace summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.crawler-actions label,
+.crawler-check,
+.crawler-meta,
+.crawler-notice {
+  font-size: 0.875rem;
+}
+
+.crawler-meta,
+.crawler-field small {
+  color: var(--text-muted);
+}
+
+.crawler-align-end {
+  align-self: end;
+  justify-self: start;
+}
+
+.crawler-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crawler-table {
+  overflow: auto;
+  border-radius: 0.35rem;
+  background: var(--surface-editor);
+}
+
+.crawler-table table {
+  width: 100%;
+  table-layout: auto;
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.crawler-table :is(th, td) {
+  max-width: 25rem;
+  padding: 0.35rem 0.55rem;
+  overflow-wrap: anywhere;
+}
+
+.crawler-table tr + tr {
+  border-top: 1px solid var(--surface-selected);
+}
+
+.crawler-table a {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.crawler-workspace progress {
+  width: 100%;
+  accent-color: var(--accent-strong);
+}
+
+.crawler-error,
+.crawler-status[data-status="failed"] {
+  color: var(--status-error-text);
+}
+
+.crawler-notice.crawler-error {
+  margin-block-end: 0.8rem;
+  border-color: var(--status-error-indicator);
+  background: var(--status-error-surface);
+}
+
+.crawler-status {
+  margin-inline-end: 0.3rem;
+  color: var(--text-primary);
+  font-weight: 650;
+  text-transform: capitalize;
+}
+
+.crawler-status[data-status="completed"] {
+  color: var(--status-success-text);
+}

@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "WITS Tools Capture",
+  "version": "0.1.1",
+  "description": "Captures media requests from one selected tab for WITS Tools.",
+  "applications": {
+    "gecko": {
+      "id": "wits-tools-capture@local"
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "webRequest",
+    "nativeMessaging",
+    "<all_urls>",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "scripts": ["constants.js", "background.js"],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_title": "WITS Tools Capture",
+    "default_popup": "popup.html"
+  }
+}
