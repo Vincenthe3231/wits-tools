@@ -309,7 +309,7 @@ defineExpose({
 
     <section class="editor-body" aria-label="Markdown document">
       <!-- Fade in Source after the shared Markdown buffer is ready. -->
-      <NavigationTransition kind="panel">
+      <NavigationTransition kind="panel" direction="left">
         <SourceEditor
           v-if="mode === 'source'"
           :key="revision"
@@ -320,7 +320,7 @@ defineExpose({
         />
       </NavigationTransition>
       <!-- Reveal Visual without changing its existing mounted lifecycle. -->
-      <NavigationTransition kind="panel">
+      <NavigationTransition kind="panel" direction="right">
         <VisualEditor
           v-show="mode === 'visual'"
           ref="visual"

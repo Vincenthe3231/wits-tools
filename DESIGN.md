@@ -16,10 +16,10 @@
 
 ## Typography and motion
 
-- Shared navigation motion lives in `src/styles/navigation-motion.css`. Pages enter over 180 ms, in-tool panels fade over 140 ms, and the sidebar slides and fades over 160 ms on entry and 100 ms on exit. Menus and dialogs enter over 120 ms. Reduced motion disables these effects.
+- Shared navigation motion lives in `src/styles/navigation-motion.css`. Pages slide 24 px over 180 ms and in-tool panels slide 14 px over 140 ms. Dashboard and Source enter from the left. Markdown Editor and Visual enter from the right. The sidebar slides and fades over 160 ms on entry and 100 ms on exit. Menus and dialogs enter over 120 ms. Reduced motion disables these effects.
 
 - The UI font stack is `"Segoe UI Variable", "Segoe UI", system-ui, sans-serif`. The shared `--font-code` token is `"Cascadia Mono", Consolas, monospace` and covers Source mode and code in Visual mode.
-- The caret glides for 90 ms with `cubic-bezier(0.2, 0.8, 0.3, 1)`. The optional trail fades over 170 ms. Trail distances live in [caret-motion.ts](src/const/markdown-editor/caret-motion.ts) and apply to both modes.
+- A 4 px caret head follows a damped spring. A slower spring stretches the fading trail up to 180 px behind it. Both modes use the settings in [caret-motion.ts](src/const/markdown-editor/caret-motion.ts).
 - Use the native caret during composition, reduced motion, and Windows forced-color mode. New motion should explain a change in position or state and use transform or opacity where possible.
 
 ## Adding and using tokens

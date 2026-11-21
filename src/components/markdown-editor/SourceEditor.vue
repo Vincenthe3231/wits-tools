@@ -18,7 +18,7 @@ const surface = ref<HTMLElement>();
 let view: EditorView | undefined;
 let composing = false;
 
-const { caret, trail, refresh, refreshMovement, hide, clearTrail } = useAnimatedCaret(
+const { caret, trail, refresh, hide } = useAnimatedCaret(
   surface,
   () => {
     if (!view?.hasFocus || composing || view.composing || !view.state.selection.main.empty) {
@@ -62,11 +62,7 @@ onMounted(() => {
         if (update.docChanged) {
           emit("update:modelValue", update.state.doc.toString().replace(/\n/g, lineEnding));
         }
-        if (update.selectionSet || update.docChanged) {
-          refreshMovement();
-        } else {
-          refresh();
-        }
+        refresh();
       }),
       EditorState.transactionFilter.of((transaction) => {
         if (
@@ -98,7 +94,7 @@ defineExpose({ focus: () => view?.focus() });
 <template>
   <div ref="surface" class="source-editor" :class="{ 'has-animated-caret': caret }">
     <div ref="container" class="source-content" />
-    <EditorCaret :caret="caret" :trail="trail" @trail-finished="clearTrail" />
+    <EditorCaret :caret="caret" :trail="trail" />
   </div>
 </template>
 

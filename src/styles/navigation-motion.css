@@ -42,17 +42,35 @@
     opacity: 0;
   }
 
+  /* Callers choose the incoming edge, and smaller panels travel less than pages. */
   .navigation-page-enter-from {
-    transform: translateY(8px);
+    --navigation-distance: 24px;
+  }
+
+  .navigation-panel-enter-from {
+    --navigation-distance: 14px;
+  }
+
+  .navigation-from-left {
+    transform: translateX(calc(-1 * var(--navigation-distance, 8px)));
+  }
+
+  .navigation-from-right {
+    transform: translateX(var(--navigation-distance, 8px));
+  }
+
+  .navigation-from-up {
+    transform: translateY(calc(-1 * var(--navigation-distance, 8px)));
+  }
+
+  .navigation-from-down {
+    transform: translateY(var(--navigation-distance, 8px));
   }
 
   .navigation-sidebar-enter-from {
     transform: translateX(-8px);
   }
 
-  .navigation-menu-enter-from {
-    transform: translateY(4px);
-  }
 
   /* Move the closing sidebar over the expanded content while it fades out. */
   .workspace-sidebar.navigation-sidebar-leave-active {

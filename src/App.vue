@@ -115,11 +115,11 @@ const closeError = useWindowClose(async () => editor.value?.requestClose(askClos
       <!-- Hide the retained editor instead of remounting it when the catalog is visible. -->
       <div class="workspace-content">
         <RouterView v-slot="{ Component }">
-          <NavigationTransition kind="page">
+          <NavigationTransition kind="page" direction="left">
             <component :is="Component" v-if="!enterEditor" :key="route.path" :query="toolQuery" />
           </NavigationTransition>
         </RouterView>
-        <NavigationTransition kind="page">
+        <NavigationTransition kind="page" direction="right">
           <MarkdownEditorPage
             v-if="lifecycle !== 'NotOpened'"
             v-show="enterEditor"

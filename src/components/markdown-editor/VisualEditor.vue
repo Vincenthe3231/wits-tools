@@ -36,7 +36,7 @@ const canMoveDown = computed(() =>
   editor.value ? blockIndex.value + 1 < editor.value.state.doc.childCount : false,
 );
 
-const { caret, trail, refresh, refreshMovement, hide, clearTrail } = useAnimatedCaret(
+const { caret, trail, refresh, hide } = useAnimatedCaret(
   surface,
   () => {
     const current = editor.value;
@@ -137,14 +137,10 @@ function prepare(markdown: string): string | undefined {
       },
     },
     onUpdate: () => emit("edited"),
-    onTransaction: ({ editor: current, transaction }) => {
+    onTransaction: ({ editor: current }) => {
       if (current === editor.value) {
         updateSlash(current as Editor);
-        if (transaction.selectionSet || transaction.docChanged) {
-          refreshMovement();
-        } else {
-          refresh();
-        }
+        refresh();
       }
     },
     onFocus: () => refresh(),
@@ -295,7 +291,7 @@ defineExpose({
       <div class="visual-scroll">
         <EditorContent :editor="editor" class="visual-content" />
       </div>
-      <EditorCaret :caret="caret" :trail="trail" @trail-finished="clearTrail" />
+      <EditorCaret :caret="caret" :trail="trail" />
 
       <!-- Animate the command menu while the editor keeps keyboard focus. -->
       <NavigationTransition kind="menu">
@@ -394,18 +390,31 @@ defineExpose({
   overflow: auto;
 }
 
+/* Give the editable root the full pane, including space below a short document. */
 .visual-content {
-  width: min(100%, 74ch);
-  margin-inline: auto;
-  padding: clamp(1rem, 4vw, 3rem);
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
 }
 
 .visual-content :deep(.tiptap) {
-  min-height: 14rem;
-  padding: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  padding: clamp(1rem, 3vw, 2rem);
+  outline: none;
   line-height: 1.7;
   overflow-wrap: anywhere;
   caret-color: var(--accent-strong);
+}
+
+/* Mark keyboard focus at the pane edge without framing the document. */
+.visual-surface:has(.tiptap:focus-visible)::after {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  pointer-events: none;
+  background: var(--accent-strong);
+  content: "";
 }
 
 .visual-content :deep(.tiptap > *) {

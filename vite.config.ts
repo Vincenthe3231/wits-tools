@@ -1,13 +1,16 @@
+/** Configures the Vue build and local Tauri development server. */
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import tailwindcss from "@tailwindcss/vite";
+import vueDevTools from "vite-plugin-vue-devtools";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(() => ({
-  plugins: [vue(), tailwindcss()],
+export default defineConfig(({ command, isPreview }) => ({
+  // Expose the component inspector only in development sessions.
+  plugins: [vue(), tailwindcss(), command === "serve" && !isPreview && vueDevTools()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
