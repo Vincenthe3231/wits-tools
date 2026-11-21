@@ -1,3 +1,4 @@
+<!-- Hosts CodeMirror and handles editing and clipboard actions in Markdown source. -->
 <script setup lang="ts">
 import { onMounted, onScopeDispose, ref, watch } from "vue";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -9,6 +10,12 @@ import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirro
 
 import { sourceHighlighting } from "../../const/markdown-editor/source-highlighting";
 import { useAnimatedCaret } from "../../composables/markdown-editor/use-animated-caret";
+import {
+  clipboardImages,
+  imageImportMessage,
+  imageMarkdown,
+  stageImage,
+} from "../../utils/markdown-editor/image-attachments";
 import EditorCaret from "./EditorCaret.vue";
 
 const props = defineProps<{ modelValue: string; locked: boolean }>();
@@ -17,6 +24,52 @@ const container = ref<HTMLElement>();
 const surface = ref<HTMLElement>();
 let view: EditorView | undefined;
 let composing = false;
+
+// Keep the clipboard operation separate from ordinary CodeMirror text edits.
+const pastingImage = ref(false);
+const imageError = ref("");
+let pasteRange: { from: number; to: number } | undefined;
+
+// Claim a bitmap paste before CodeMirror can consume any text carried alongside it.
+function pasteImage(event: ClipboardEvent, current: EditorView): boolean {
+  const files = clipboardImages(event.clipboardData);
+  if (!files.length) return false;
+
+  event.preventDefault();
+  if (!props.locked && !pastingImage.value) void insertImages(current, files);
+  return true;
+}
+
+// Stage every image first so a failed import leaves the original selection and text intact.
+async function insertImages(current: EditorView, files: File[]) {
+  pasteRange = current.state.selection.main;
+  pastingImage.value = true;
+  imageError.value = "";
+
+  try {
+    const references: string[] = [];
+    for (const file of files) {
+      references.push(imageMarkdown({ attrs: await stageImage(file) }));
+    }
+
+    if (view !== current || !pasteRange || props.locked) return;
+
+    // Separate multiple images with blank lines and leave the caret after the pasted text.
+    const { from, to } = pasteRange;
+    const insert = references.join("\n\n");
+    current.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+      scrollIntoView: true,
+      userEvent: "input.paste",
+    });
+  } catch (error) {
+    imageError.value = imageImportMessage(error);
+  } finally {
+    pasteRange = undefined;
+    pastingImage.value = false;
+  }
+}
 
 const { caret, trail, refresh, hide } = useAnimatedCaret(
   surface,
@@ -49,6 +102,7 @@ onMounted(() => {
         spellcheck: "false",
       }),
       EditorView.domEventHandlers({
+        paste: pasteImage,
         compositionstart() {
           composing = true;
           hide();
@@ -59,6 +113,13 @@ onMounted(() => {
         },
       }),
       EditorView.updateListener.of((update) => {
+        // Follow the original paste range if the user types while the image is being staged.
+        if (pasteRange && update.docChanged) {
+          const from = update.changes.mapPos(pasteRange.from, 1);
+          const to = update.changes.mapPos(pasteRange.to, -1);
+          pasteRange = { from, to: Math.max(from, to) };
+        }
+
         if (update.docChanged) {
           emit("update:modelValue", update.state.doc.toString().replace(/\n/g, lineEnding));
         }
@@ -87,12 +148,18 @@ watch(
   },
 );
 
-onScopeDispose(() => view?.destroy());
-defineExpose({ focus: () => view?.focus() });
+// Invalidate any outstanding paste before CodeMirror is destroyed.
+onScopeDispose(() => {
+  view?.destroy();
+  view = undefined;
+});
+defineExpose({ focus: () => view?.focus(), pastingImage });
 </script>
 
 <template>
   <div ref="surface" class="source-editor" :class="{ 'has-animated-caret': caret }">
+    <!-- Report a failed import without inserting fallback clipboard text. -->
+    <p class="source-image-error" role="status">{{ imageError }}</p>
     <div ref="container" class="source-content" />
     <EditorCaret :caret="caret" :trail="trail" />
   </div>
@@ -105,9 +172,21 @@ defineExpose({ focus: () => view?.focus() });
   min-height: 0;
 }
 
+/* Give clipboard feedback its own space above the scrollable source editor. */
 .source-editor {
   position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
+}
+
+.source-image-error {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.source-image-error:not(:empty) {
+  padding: 0.25rem 1rem;
 }
 
 .source-content :deep(.cm-editor) {

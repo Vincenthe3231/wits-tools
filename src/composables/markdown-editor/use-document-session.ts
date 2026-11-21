@@ -2,7 +2,7 @@
 import { computed, onScopeDispose, ref } from "vue";
 
 import { markdownEditor, type OpenDocument } from "../../api/markdown-editor";
-import { formatVisualMarkdown } from "../../utils/markdown-editor/markdown-format";
+import { formatVisualMarkdown, markdownImageSources } from "../../utils/markdown-editor/markdown-format";
 
 const RECOVERY_DELAY = 500;
 
@@ -152,7 +152,12 @@ export function useDocumentSession(serializeVisual: () => string | undefined) {
       } else {
         await recoveryQueue;
       }
-      const storedName = await markdownEditor.save(buffer.value, saveAs);
+      // Include image references from both modes so Save As can publish attachments.
+      const storedName = await markdownEditor.save(
+        buffer.value,
+        saveAs,
+        markdownImageSources(buffer.value),
+      );
       if (storedName === null) {
         return false;
       }

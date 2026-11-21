@@ -8,6 +8,7 @@ import {
   markdownExtensions,
 } from "../../utils/markdown-editor/markdown-format";
 import { useAnimatedCaret } from "../../composables/markdown-editor/use-animated-caret";
+import { useVisualImages } from "../../composables/markdown-editor/use-visual-images";
 import { useSlashMenu } from "../../composables/markdown-editor/use-slash-menu";
 import type { BlockAction } from "../../utils/markdown-editor/visual-blocks";
 import VisualBlockControls from "./VisualBlockControls.vue";
@@ -18,6 +19,18 @@ const props = defineProps<{ locked: boolean }>();
 const emit = defineEmits<{ edited: [] }>();
 const surface = ref<HTMLElement>();
 const editor = shallowRef<Editor>();
+
+// Reuse the current Visual selection for the picker and clipboard commands.
+const images = useVisualImages(editor, () => props.locked);
+const { busy: importingImage, message: imageMessage } = images;
+const imagePicker = ref<HTMLInputElement>();
+
+// Reset the input so selecting the same file twice still triggers insertion.
+function pickImages(event: Event) {
+  const input = event.currentTarget as HTMLInputElement;
+  void images.insert(Array.from(input.files ?? []));
+  input.value = "";
+}
 // Keep menu state outside the saved document and reuse the editor's current selection.
 const commands = useSlashMenu(editor);
 const { slash, activeOption, choices } = commands;
@@ -119,7 +132,10 @@ function prepare(markdown: string): string | undefined {
         return true;
       },
       handleKeyDown: (_view, event) => slashKey(event),
+      // Intercept bitmap clipboard events before ProseMirror performs its default conversion.
+      handlePaste: (_view, event) => images.paste(event),
       handleDOMEvents: {
+        copy: (view, event) => view === editor.value?.view && images.copy(event),
         compositionstart: () => {
           composing.value = true;
           hide();
@@ -272,6 +288,22 @@ defineExpose({
         Code
       </button>
       <button ref="linkButton" type="button" :disabled="locked" @click="openLink">Link</button>
+      <!-- Keep the native file picker keyboard-accessible through the toolbar. -->
+      <input
+        ref="imagePicker"
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        multiple
+        hidden
+        @change="pickImages"
+      />
+      <button
+        type="button"
+        :disabled="locked || importingImage"
+        @click="imagePicker?.click()"
+      >
+        {{ importingImage ? "Inserting…" : "Insert image" }}
+      </button>
       <!-- Offer the same block actions from the keyboard-accessible toolbar. -->
       <button
         type="button"
@@ -281,6 +313,9 @@ defineExpose({
         Block actions
       </button>
     </div>
+
+    <!-- Announce import or clipboard errors without interrupting typing. -->
+    <p class="image-message" role="status">{{ imageMessage }}</p>
 
     <div ref="surface" class="visual-surface" :class="{ 'has-animated-caret': caret }">
       <div class="visual-scroll" @scroll="positionSlash">
@@ -344,7 +379,7 @@ defineExpose({
 <style scoped>
 .visual-editor {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
 }
@@ -536,5 +571,29 @@ defineExpose({
   border-color: var(--accent-strong);
   background: var(--surface-selected);
   color: var(--text-primary);
+}
+/* Fit image blocks to the writing area and identify selected images without shifting layout. */
+.visual-content :deep(img) {
+  max-inline-size: 100%;
+  block-size: auto;
+  vertical-align: middle;
+}
+
+.visual-content :deep(img.ProseMirror-selectednode) {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+/* Keep operation feedback readable against the editor surface in both themes. */
+.image-message {
+  margin: 0;
+  padding: 0.25rem 1rem;
+  color: var(--text-primary);
+  background: var(--surface-editor);
+}
+
+/* Collapse the feedback row when there is no message. */
+.image-message:empty {
+  padding: 0;
 }
 </style>

@@ -32,8 +32,19 @@ const session = useDocumentSession(() => visual.value?.serialize());
 const { name, mode, buffer, busy, revision, error, recoveryError, externalChange, status, dirty } =
   session;
 
+// Finish staging an image before actions that could save or replace its document.
+const working = computed(() => busy.value || Boolean(source.value?.pastingImage));
+
+// Clear a previous conversion result once the underlying Markdown changes.
+function editSource(markdown: string) {
+  visualReason.value = "";
+  session.editSource(markdown);
+}
+
 // Validate Markdown before activating Visual and serialize Visual changes before returning to Source.
 function switchMode(target: "source" | "visual", focus = true) {
+  if (source.value?.pastingImage) return;
+
   if (target === "visual") {
     if (mode.value === "visual") {
       return;
@@ -164,7 +175,7 @@ function shortcuts(event: KeyboardEvent) {
     return;
   }
   event.preventDefault();
-  if (busy.value || !nativeApp) {
+  if (working.value || !nativeApp) {
     return;
   }
   if (key === "s") {
@@ -211,7 +222,7 @@ watch(
 
 // Let the shell own the dialog and keep the editor responsible for saving or resetting its session.
 async function requestClose(ask: () => Promise<"save" | "discard" | "cancel">) {
-  if (busy.value) {
+  if (working.value) {
     return false;
   }
 
@@ -240,7 +251,7 @@ onScopeDispose(() => window.removeEventListener("keydown", shortcuts));
 defineExpose({
   requestClose,
   navigationBlocked: computed(
-    () => busy.value || replacement.value !== undefined || recovery.value.phase === "Available",
+    () => working.value || replacement.value !== undefined || recovery.value.phase === "Available",
   ),
   closeError: error,
 });
@@ -252,26 +263,26 @@ defineExpose({
       <div class="file-identity">
         <span class="file-name" :title="name">{{ name }}</span>
         <span class="file-status" role="status">
-          {{ busy ? "Working…" : status || (dirty ? "Unsaved changes" : "Markdown") }}
+          {{ source?.pastingImage ? "Pasting image…" : busy ? "Working…" : status || (dirty ? "Unsaved changes" : "Markdown") }}
         </span>
       </div>
 
       <div class="workspace-actions" role="group" aria-label="File actions">
-        <button type="button" :disabled="busy || !nativeApp" @click="changeDocument('new')">
+        <button type="button" :disabled="working || !nativeApp" @click="changeDocument('new')">
           New
         </button>
-        <button type="button" :disabled="busy || !nativeApp" @click="changeDocument('open')">
+        <button type="button" :disabled="working || !nativeApp" @click="changeDocument('open')">
           Open
         </button>
         <button
           type="button"
           class="primary-button"
-          :disabled="busy || !nativeApp"
+          :disabled="working || !nativeApp"
           @click="saveDocument()"
         >
           Save
         </button>
-        <button type="button" :disabled="busy || !nativeApp" @click="saveDocument(true)">
+        <button type="button" :disabled="working || !nativeApp" @click="saveDocument(true)">
           Save As
         </button>
       </div>
@@ -279,7 +290,7 @@ defineExpose({
       <div class="mode-switch" role="group" aria-label="Editing mode">
         <button
           type="button"
-          :disabled="busy"
+          :disabled="working"
           :aria-pressed="mode === 'source'"
           @click="mode !== 'source' && switchMode('source')"
         >
@@ -287,7 +298,7 @@ defineExpose({
         </button>
         <button
           type="button"
-          :disabled="busy"
+          :disabled="working"
           :aria-pressed="mode === 'visual'"
           :aria-describedby="visualReason ? 'visual-reason' : undefined"
           @click="switchMode('visual')"
@@ -301,7 +312,7 @@ defineExpose({
       <p v-if="!nativeApp">Open WITS Tools on your desktop to use local files and recovery.</p>
       <div v-if="error" class="workspace-error" role="alert">
         <span>{{ error }}</span>
-        <button v-if="externalChange" type="button" :disabled="busy" @click="saveDocument(true)">
+        <button v-if="externalChange" type="button" :disabled="working" @click="saveDocument(true)">
           Save As
         </button>
       </div>
@@ -318,7 +329,7 @@ defineExpose({
           ref="source"
           :model-value="buffer"
           :locked="busy"
-          @update:model-value="session.editSource"
+          @update:model-value="editSource"
         />
       </NavigationTransition>
       <!-- Reveal Visual without changing its existing mounted lifecycle. -->

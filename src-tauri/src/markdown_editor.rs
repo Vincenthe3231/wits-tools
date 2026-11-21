@@ -2,6 +2,7 @@
 pub(crate) mod commands;
 mod error;
 mod files;
+mod images;
 mod recovery;
 
 use std::{path::PathBuf, sync::Mutex};

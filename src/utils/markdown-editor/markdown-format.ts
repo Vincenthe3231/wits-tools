@@ -6,12 +6,13 @@ import { Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
 import { Marked } from "marked";
 
+import { VisualImage } from "./visual-image";
+
 const lexer = new Marked({ gfm: true });
 
 const sourceOnly = new Map([
   ["html", "raw HTML"],
   ["table", "tables"],
-  ["image", "images"],
   ["del", "strikethrough"],
   ["hr", "thematic breaks"],
 ]);
@@ -22,6 +23,14 @@ const VisualStarterKit = StarterKit.extend({
     return (this.parent?.() ?? []).map((extension) => {
       if (extension.name === "paragraph") {
         return extension.extend({
+          // The default paragraph parser unwraps lone images for block image schemas.
+          parseMarkdown(token, helpers) {
+            const tokens = token.tokens ?? [];
+            if (tokens.length === 1 && tokens[0].type === "image") {
+              return helpers.createNode("paragraph", undefined, helpers.parseInline(tokens));
+            }
+            return this.parent?.(token, helpers) ?? null;
+          },
           renderMarkdown(node, helpers, context) {
             // An empty paragraph moved to the start of the document needs an explicit marker.
             return !node.content?.length && context.parentType === "doc"
@@ -87,6 +96,7 @@ export function markdownExtensions() {
     TaskList,
     // The live task NodeView needs the same selector as the serialized HTML.
     VisualTaskItem.configure({ nested: true, HTMLAttributes: { "data-type": "taskItem" } }),
+    VisualImage,
     Markdown,
   ];
 }
@@ -138,4 +148,17 @@ export function checkedVisualContent(editor: Editor, markdown: string): VisualCo
 export function formatVisualMarkdown(markdown: string, original: string): string {
   const text = original.includes("\r\n") ? markdown.replace(/\r?\n/g, "\r\n") : markdown;
   return original.startsWith("\uFEFF") ? "\uFEFF" + text : text;
+}
+
+// Find real Markdown images, including reference-style links, while ignoring examples in code fences.
+export function markdownImageSources(markdown: string): string[] {
+  const sources = new Set<string>();
+
+  lexer.walkTokens(lexer.lexer(markdown.replace(/^\uFEFF/, "")), (token) => {
+    if (token.type === "image" && typeof token.href === "string") {
+      sources.add(token.href);
+    }
+  });
+
+  return [...sources];
 }

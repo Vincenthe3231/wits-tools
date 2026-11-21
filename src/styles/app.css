@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./status.css";
 
 :root {
   color-scheme: light dark;

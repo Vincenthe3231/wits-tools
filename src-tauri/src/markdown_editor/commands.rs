@@ -7,7 +7,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::{
     EditorError, EditorResult, EditorState, FileVersion, OpenDocument, RecoveryDraft, files,
-    recovery,
+    images, recovery,
 };
 
 /// Replace the open file only after the picker succeeds and the selected file is readable.
@@ -38,6 +38,7 @@ pub async fn editor_save(
     app: AppHandle,
     markdown: String,
     save_as: bool,
+    image_sources: Vec<String>,
 ) -> EditorResult<Option<String>> {
     let state = app.state::<EditorState>();
     // Release the session lock before yielding control to a native file picker.
@@ -65,7 +66,14 @@ pub async fn editor_save(
 
     let mut current = current_file(&state)?;
     // Update the tracked file version only after the write succeeds.
-    let saved = files::save(selected.as_deref(), current.as_ref(), &markdown)?;
+    let image_root = image_cache(&app)?;
+    let parent = current.as_ref().and_then(|file| file.path.parent());
+    let saved = files::save(
+        selected.as_deref(),
+        current.as_ref(),
+        &markdown,
+        |destination| images::publish(&image_root, parent, destination, &image_sources),
+    )?;
     let name = files::name(&saved.path);
     *current = Some(saved);
     Ok(Some(name))
@@ -138,4 +146,33 @@ fn current_file(state: &EditorState) -> EditorResult<MutexGuard<'_, Option<FileV
         .0
         .lock()
         .map_err(|_| EditorError::new("state", "The editor session is unavailable."))
+}
+
+/// Cache imported bytes before returning a relative path that can survive recovery.
+#[tauri::command]
+pub async fn editor_stage_image(
+    app: AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> EditorResult<String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(EditorError::new(
+            "imageType",
+            "The image could not be read.",
+        ));
+    };
+    images::stage(&image_cache(&app)?, bytes)
+}
+
+/// Preview document-local raster attachments without broadening WebView filesystem access.
+#[tauri::command]
+pub async fn editor_read_image(app: AppHandle, src: String) -> EditorResult<tauri::ipc::Response> {
+    let state = app.state::<EditorState>();
+    let original = current_file(&state)?.clone();
+    let parent = original.as_ref().and_then(|file| file.path.parent());
+    images::preview(&image_cache(&app)?, parent, &src).map(tauri::ipc::Response::new)
+}
+
+/// Keep bytes available across application restarts while a draft references them.
+fn image_cache(app: &AppHandle) -> EditorResult<PathBuf> {
+    Ok(recovery_path(app)?.with_file_name("markdown-images"))
 }

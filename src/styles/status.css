@@ -1,0 +1,38 @@
+/* Defines shared status colors that follow the app's resolved light or dark appearance. */
+:root {
+  /* Each status has a tinted surface, readable text, and an indicator for borders and icons. */
+  --status-error-surface: light-dark(#fbeae7, #3a2526);
+  --status-error-text: light-dark(#72262c, #ffdedb);
+  --status-error-indicator: light-dark(#a03333, #f29b98);
+
+  --status-warning-surface: light-dark(#faf0d7, #372e1b);
+  --status-warning-text: light-dark(#583c0a, #fae6b1);
+  --status-warning-indicator: light-dark(#795300, #e7bf65);
+
+  --status-info-surface: light-dark(#e8f1fa, #203043);
+  --status-info-text: light-dark(#21486e, #deedff);
+  --status-info-indicator: light-dark(#285d88, #8bbde9);
+
+  --status-success-surface: light-dark(#e5f2e8, #20372d);
+  --status-success-text: light-dark(#214b37, #d9f5e3);
+  --status-success-indicator: light-dark(#29634a, #8ad4ab);
+}
+
+/* Expose semantic names as Tailwind color utilities without duplicating the theme values. */
+@theme inline {
+  --color-status-error-surface: var(--status-error-surface);
+  --color-status-error-text: var(--status-error-text);
+  --color-status-error-indicator: var(--status-error-indicator);
+
+  --color-status-warning-surface: var(--status-warning-surface);
+  --color-status-warning-text: var(--status-warning-text);
+  --color-status-warning-indicator: var(--status-warning-indicator);
+
+  --color-status-info-surface: var(--status-info-surface);
+  --color-status-info-text: var(--status-info-text);
+  --color-status-info-indicator: var(--status-info-indicator);
+
+  --color-status-success-surface: var(--status-success-surface);
+  --color-status-success-text: var(--status-success-text);
+  --color-status-success-indicator: var(--status-success-indicator);
+}

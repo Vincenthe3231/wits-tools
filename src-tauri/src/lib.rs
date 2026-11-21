@@ -9,6 +9,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             markdown_editor::commands::editor_open,
             markdown_editor::commands::editor_save,
+            // Keep image operations scoped to the editor session.
+            markdown_editor::commands::editor_stage_image,
+            markdown_editor::commands::editor_read_image,
             markdown_editor::commands::editor_reset,
             markdown_editor::commands::editor_recovery_info,
             markdown_editor::commands::editor_restore,

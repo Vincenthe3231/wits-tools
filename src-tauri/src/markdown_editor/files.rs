@@ -89,6 +89,7 @@ pub(super) fn save(
     selected: Option<&Path>,
     original: Option<&FileVersion>,
     markdown: &str,
+    prepare_assets: impl FnOnce(&Path) -> EditorResult<()>,
 ) -> EditorResult<FileVersion> {
     validate_size(markdown)?;
     let path = match selected {
@@ -125,6 +126,8 @@ pub(super) fn save(
         }
     }
 
+    // Publish attachments before making the Markdown visible at its destination.
+    prepare_assets(path.parent().ok_or_else(invalid_destination)?)?;
     replace(staged, &path, overwrite)?;
     Ok(FileVersion {
         path,
@@ -178,6 +181,11 @@ pub(super) fn write_recovery(path: &Path, bytes: &[u8]) -> EditorResult<()> {
     replace(stage(path, bytes)?, path, true)
 }
 
+/// Publish a new attachment without replacing a file created by another process.
+pub(super) fn write_attachment(path: &Path, bytes: &[u8]) -> EditorResult<()> {
+    replace(stage(path, bytes)?, path, false)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -209,11 +217,13 @@ mod tests {
         fs::write(&original, "external change").unwrap();
 
         for target in [None, Some(original.as_path())] {
-            let error = save(target, Some(&version), "draft").err().unwrap();
+            let error = save(target, Some(&version), "draft", |_| Ok(()))
+                .err()
+                .unwrap();
             assert_eq!(error.code, "externalChange");
         }
 
-        save(Some(&copy), Some(&version), "draft").unwrap();
+        save(Some(&copy), Some(&version), "draft", |_| Ok(())).unwrap();
         assert_eq!(fs::read_to_string(&copy).unwrap(), "draft");
         assert_eq!(fs::read_to_string(&original).unwrap(), "external change");
     }

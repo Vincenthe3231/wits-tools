@@ -1,6 +1,6 @@
 # WITS Tools design tokens
 
-[app.css](src/styles/app.css) is the source of truth for global design tokens. Vue loads it through `src/main.ts`. The dashboard and both editor modes use the same semantic roles. Appearance follows the system until the toolbar theme icon is used. The icon switches directly between Light and Dark, and the app remembers the selection.
+[app.css](src/styles/app.css) loads the global palette and the shared [status tokens](src/styles/status.css). Vue loads it through `src/main.ts`. The dashboard and both editor modes use the same semantic roles. Appearance follows the system until the toolbar theme icon is used. The icon switches directly between Light and Dark, and the app remembers the selection.
 
 ## Color tokens
 
@@ -13,6 +13,38 @@
 | `--text-muted` | `#51645b` | `#b5c6bb` | Secondary text on editor and toolbar surfaces. |
 | `--accent-strong` | `#24483d` | `#a9d3ba` | Links, focus rings, the caret, selected indicators, and primary button fills. |
 | `--text-on-accent` | `#ffffff` | `#17211d` | Text on an `--accent-strong` fill. |
+
+## Status colors
+
+Use these tokens for toasts and inline notices. Each status defines a surface, text, and indicator. The indicator colors icons and borders. All tokens follow the same system or toolbar appearance setting as the workspace.
+
+| Status | Role | Light | Dark |
+| --- | --- | --- | --- |
+| Error | Surface | `#fbeae7` | `#3a2526` |
+| Error | Text | `#72262c` | `#ffdedb` |
+| Error | Indicator | `#a03333` | `#f29b98` |
+| Warning | Surface | `#faf0d7` | `#372e1b` |
+| Warning | Text | `#583c0a` | `#fae6b1` |
+| Warning | Indicator | `#795300` | `#e7bf65` |
+| Info | Surface | `#e8f1fa` | `#203043` |
+| Info | Text | `#21486e` | `#deedff` |
+| Info | Indicator | `#285d88` | `#8bbde9` |
+| Success | Surface | `#e5f2e8` | `#20372d` |
+| Success | Text | `#214b37` | `#d9f5e3` |
+| Success | Indicator | `#29634a` | `#8ad4ab` |
+
+CSS variables use the `--status-<kind>-<role>` pattern. For an error notice, apply `bg-status-error-surface`, `text-status-error-text`, and `border-status-error-indicator` with a border-width utility. Use `text-status-error-indicator` on an icon. List complete utility names in Vue variant maps so Tailwind can detect them. In scoped CSS, use the same variables directly.
+
+- **Error** reports a failed action and explains what happened to the user's work. Keep required recovery steps available in the owning view or dialog.
+- **Warning** describes a condition that needs attention, such as limited functionality or a risky next step.
+- **Info** communicates a change or update the user may need to know about.
+- **Success** confirms that a user-initiated action completed. Routine background work can update the existing status text.
+
+Use a clear title and a recognizable icon as well as color. Keep controls keyboard-accessible, pair decorative icons with visible text, and respect reduced motion. Announce an event once, even when its toast and inline recovery control appear together.
+
+## UI packages
+
+Use Vue Sonner for the shared toast host and Reka UI for headless controls such as menus, popovers, and dialogs when adding or updating those controls. Use WITS Tools tokens to style both. For future UI work, reuse packages and components already in the repository. Add a UI package when a concrete requirement calls for a capability the existing packages do not provide.
 
 ## Typography and motion
 
