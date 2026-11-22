@@ -9,6 +9,12 @@ export const router = createRouter({
   routes: [
     { path: "/", name: "dashboard", component: DashboardPage },
     { path: "/tools/markdown", name: "markdown-editor", component: MarkdownEditorPage },
+    // Load the prototype editor only when its dashboard shortcut is opened.
+    {
+      path: "/tools/prototype-builder",
+      name: "prototype-builder",
+      component: () => import("../pages/prototype-builder/PrototypeBuilderPage.vue"),
+    },
     // Load the API workspace when the user first opens it.
     {
       path: "/tools/api-tester",

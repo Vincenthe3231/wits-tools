@@ -3,6 +3,13 @@
 // Keep navigation labels and searchable descriptions in one catalog.
 export const tools = [
   {
+    routeName: "prototype-builder",
+    name: "Prototype Builder",
+    description: "Import a GitHub dashboard starter, rearrange cards, and save a local variant.",
+    keywords: "prototype github dashboard drag drop remix starter",
+    icon: "document",
+  },
+  {
     routeName: "markdown-editor",
     name: "Markdown Editor",
     description: "Write and edit local Markdown files in Visual or Source mode.",

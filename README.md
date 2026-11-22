@@ -123,6 +123,12 @@ bun run tauri dev
 
 On Windows, the release executable is `src-tauri/target/release/wits-tools.exe`. The bundled release also writes the NSIS setup executable and MSI installer under `src-tauri/target/release/bundle/`. The release builds the frontend as one Vite application.
 
+## Prototype Builder
+
+Open **Prototype Builder** from the dashboard. Choose **Open bundled sample** to start offline, or paste a public GitHub repository URL and choose **Import GitHub starter**. A supported repo contains `examples/prototype-builder/wits-starter.json` on its default branch. See the [sample dashboard](examples/prototype-builder/wits-starter.json) for the version 1 format. WITS imports the dashboard data directly without requiring Git, a package manager, or a project build.
+
+Drag cards to reorder them or use **Move up** and **Move down**. Rename a card and check the live preview, then choose **Save variant**. Use **Save as new** to keep a separate copy. Saved variants reopen offline from the **Saved variants** list. The WITS Tools repository URL becomes a valid GitHub import after the fixture reaches the public default branch.
+
 ## Markdown images
 
 In Visual mode, use **Insert image** to choose a local PNG, JPEG, GIF, or WebP, or paste an image from the clipboard. The limit is 16 MiB per image. Select an image and press **Ctrl+C** to copy it. Use the block handle to drag an image block, or use **Block actions** to move it with the keyboard.

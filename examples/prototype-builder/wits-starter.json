@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "title": "Launch readiness",
+  "cards": [
+    {
+      "id": "status",
+      "title": "Release status",
+      "body": "The preview build is ready for internal review."
+    },
+    {
+      "id": "milestones",
+      "title": "Upcoming milestones",
+      "body": "Finish the accessibility review and confirm the release notes."
+    },
+    {
+      "id": "actions",
+      "title": "Next actions",
+      "body": "Collect demo feedback and make a short list of follow-up fixes."
+    }
+  ]
+}
