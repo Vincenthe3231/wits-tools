@@ -50,11 +50,21 @@ Use a clear title and a recognizable icon as well as color. Keep controls keyboa
 
 ## UI packages
 
-Use Vue Sonner for the shared toast host and Reka UI for headless controls such as menus, popovers, and dialogs when adding or updating those controls. Use WITS Tools tokens to style both.
+Use Vue Sonner for the shared toast host and Reka UI for headless controls such as menus, popovers, dialogs, and sliders when adding or updating those controls. Use WITS Tools tokens to style both.
 
 All UI work must use only components and UI packages already in the repository. Reuse or compose existing components and installed primitives. Add a new component or UI package only when the user explicitly requests it or when a concrete requirement cannot be met with the existing ones. Limit the exception to that requirement and use WITS Tools design tokens.
 
+### Sliders
+
+Use the shared Reka UI slider for bounded numeric settings and pair its track with an editable value. Put the visible label and number field on the same line above the track. Name both controls for assistive technology and announce units with the slider value. Group sliders in a dedicated responsive grid row with at most two sliders side by side. Wrap to one per row when space is tight. A single slider can occupy the row on its own.
+
+Use a 44 px interaction area around the track. Use `--accent-strong` for the track outline, fill, thumb outline, and focus indicator, and `--surface-editor` for the thumb and unfilled track. Keep essential indicators at 3:1 contrast or higher. Show invalid values inline using `--status-error-text`. The thumb and fill follow input immediately without animated travel, including with reduced motion.
+
+When the numeric entry permits values above the slider range, keep the exact value visible, hold the thumb at the upper endpoint, and explain the slider limit below the track.
+
 ## Typography and motion
+
+- Dropdowns move 6 px from their trigger toward the side where they open. They enter over the existing 120 ms menu duration after a 25 ms delay. Select popups exit over 85 ms. Reduced motion disables the travel and delay.
 
 - Shared navigation motion lives in `src/styles/navigation-motion.css`. Pages slide 24 px over 180 ms and in-tool panels slide 14 px over 140 ms. Dashboard and Source enter from the left. Markdown Editor and Visual enter from the right. The sidebar slides and fades over 160 ms on entry and 100 ms on exit. Menus and dialogs enter over 120 ms. Reduced motion disables these effects.
 

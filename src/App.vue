@@ -3,6 +3,7 @@
 import { computed, nextTick, onScopeDispose, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import { crawler } from "./api/crawler";
 import AppToaster from "./components/AppToaster.vue";
 import { useWindowClose } from "./composables/use-window-close";
 import WorkspaceAppearance from "./components/dashboard/WorkspaceAppearance.vue";
@@ -74,7 +75,12 @@ function finishClosePrompt() {
   resolveClose = undefined;
 }
 
-const closeError = useWindowClose(async () => editor.value?.requestClose(askClose) ?? true);
+// Wait for the editor's close decision before cancelling native crawler activity.
+const closeError = useWindowClose(async () => {
+  if (editor.value && !(await editor.value.requestClose(askClose))) return false;
+  await crawler.shutdown().catch(() => undefined);
+  return true;
+});
 </script>
 
 <template>
@@ -122,11 +128,11 @@ const closeError = useWindowClose(async () => editor.value?.requestClose(askClos
         {{ editor.closeError }}
       </p>
 
-      <!-- Cache the API draft for this window and retain the editor's close handling. -->
+      <!-- Retain tool drafts and selections while navigating through the workspace. -->
       <div class="workspace-content">
         <RouterView v-slot="{ Component }">
           <NavigationTransition kind="page" direction="left">
-            <KeepAlive include="ApiTesterPage">
+            <KeepAlive include="ApiTesterPage,CrawlerPage">
               <component
                 :is="Component"
                 v-if="!enterEditor"

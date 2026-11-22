@@ -3,6 +3,7 @@
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
 import { computed, nextTick, reactive, ref, shallowRef } from "vue";
 
+import AppSelect from "../../components/AppSelect.vue";
 import { ApiFailure, sendApiRequest, type ApiResponse } from "../../api/api-tester";
 import { notify } from "../../composables/use-notifications";
 import { apiErrors } from "../../const/api-tester/errors";
@@ -183,9 +184,13 @@ async function send() {
       <div class="request-bar">
         <div class="field">
           <label for="api-method">Method</label>
-          <select id="api-method" v-model="draft.method" v-bind="fieldState('api-method')" @change="delete errors['api-method']">
-            <option v-for="method in methods" :key="method">{{ method }}</option>
-          </select>
+          <AppSelect
+            id="api-method"
+            v-model="draft.method"
+            :options="methods.map((method) => ({ value: method, label: method }))"
+            v-bind="fieldState('api-method')"
+            @update:model-value="delete errors['api-method']"
+          />
           <p v-if="errors['api-method']" id="api-method-error" class="text-status-error-text">
             {{ errors["api-method"] }}
           </p>
@@ -541,7 +546,7 @@ input, select, textarea {
   outline-offset: 2px;
 }
 
-:is(input, select)[aria-invalid="true"] {
+:is(input, .app-select-trigger)[aria-invalid="true"] {
   border-color: var(--status-error-indicator);
 }
 

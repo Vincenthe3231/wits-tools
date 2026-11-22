@@ -131,6 +131,42 @@ On save, imported images go into a `wits-images/` folder beside the Markdown fil
 
 In Source mode, paste a clipboard image with **Ctrl+V** to insert its Markdown reference at the cursor. You can also write a relative reference such as `![Screenshot](./screenshots/login.png)` for an image already inside the document folder. Switch to Visual to preview it. When moving or saving a copy of the Markdown to another folder, copy any manually linked image folders yourself.
 
+## Crawler and Media Downloads
+
+Open **Crawler** in the dashboard. **Crawl** collects pages within the seed URL paths by default. Expand **Advanced settings** to allow additional domains, enter exclusions, or set a proxy. **Auto** uses the Rust HTTP crawler and launches Obscura for sparse or failed pages. **Browser** uses Obscura for page traversal and **Static** runs without a browser. Use **Choose folder** under **Download path** to save assets in a per-job subfolder at your chosen destination. Leaving it blank saves assets in WITS Tools app data. Deleting a job keeps files saved in a custom folder. Job history is stored in app data, and **Export JSON** saves the selected job and its page and asset records.
+
+In **Media Downloads**, enter a page URL and choose **Capture**. Play the media in the private WebView2 window, signing in there if the page requires it. Select **Download** beside a detected stream in WITS Tools. Keep the window open until the download starts. Captured streams and their request context clear when the window closes. New streams and new downloads appear at the top of their respective lists. Captured streams show the first capture time and playback duration when the manifest provides it. With no filename override, captured downloads use the page title or the last component of the page URL.
+
+Use **Direct media URL** for a known file, HLS playlist, or DASH manifest. The default destination is Windows Downloads. Segmented HLS output uses `.ts` and DASH saves the selected video representation as `.mp4`. The Downloads list shows file size, playback duration when known, and an ETA while the transfer has enough progress data.
+
+Set **Download workers** under **Download settings** to control parallel segments or byte ranges per file. The default is 4 and the range is 1 to 16. Direct files use parallel ranges only when the size is known, the file is larger than 8 MiB, and the server supports byte ranges. Other direct files use a single stream. More workers can help when individual requests are the bottleneck. They may have little effect when the server caps overall throughput or the connection is already saturated.
+
+### Proxy or DNS
+
+Both Crawl and Media Downloads accept a custom HTTP, HTTPS, SOCKS5, or SOCKS5H proxy URL, or a DNS-over-HTTPS resolver. Leave the field blank for default networking. Enter a known resolver address such as Cloudflare `1.1.1.1`, Google `8.8.8.8`, Quad9 `9.9.9.9`, or AdGuard `94.140.14.14` to select that provider's encrypted endpoint. Paste the full HTTPS endpoint for NextDNS, including your profile ID. For other providers, use their `https://…/dns-query` endpoint or prefix a custom endpoint with `doh://` in place of `https://`.
+
+DNS selection is scoped to crawler requests and does not change Windows settings. The capture browser supports DNS-over-HTTPS and unauthenticated HTTP or SOCKS5 proxies. Close and reopen the capture window after changing the route.
+
+### Capture browser diagnostics
+
+In development, the launching terminal shows `[crawler::capture-browser …]` records. Match navigation start and completion by navigation ID. Failed navigation records include WebView2's error code and the HTTP status when available. The trace reports media response status and whether replay headers were present, without printing their values or full URLs.
+
+### Windows x64 browser and CLI
+
+The desktop build hooks stage Obscura v0.2.7 and its required DLLs with a verified SHA-256. Allow the first build to retrieve the pinned archive using Windows PowerShell. Run `bun run prepare:crawler-browser` to stage it explicitly. The generated files live in `src-tauri/resources/crawler-browser/`. Keep the `crawler-browser/` folder beside the application and console binaries when copying a portable build.
+
+The installers include `wits-tools-cli.exe`. Use `--help` after any command to view its options.
+
+```powershell
+.\wits-tools-cli.exe crawl https://example.com --mode static
+.\wits-tools-cli.exe export <job-id> --output crawl.json
+.\wits-tools-cli.exe info https://example.com/playlist.m3u8
+.\wits-tools-cli.exe download https://example.com/playlist.m3u8 --output .\downloads
+.\wits-tools-cli.exe proxy run
+```
+
+The opt-in CLI proxy listens on loopback. It can observe ordinary HTTP media and tunnels HTTPS without decrypting it.
+
 ## Errors and notifications
 
 Rust tools own their native error codes. Markdown Editor defines those codes in `src-tauri/src/markdown_editor/error.rs` and validates them at the IPC boundary in `src/api/markdown-editor.ts`. Put user-facing messages in `src/const/markdown-editor/errors.ts`. Keep native diagnostics out of user-facing copy.
