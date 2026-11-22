@@ -3,23 +3,30 @@
 import { ref } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
+import AppSelect from "../AppSelect.vue";
+import AppSlider from "../AppSlider.vue";
+import AppInputSelect from "../AppInputSelect.vue";
 import { crawler } from "../../api/crawler";
 import type { CrawlJob, CrawlMode } from "../../api/crawler";
 import type { useCrawlerJobs } from "../../composables/crawler/use-crawler-jobs";
 import { notify } from "../../composables/use-notifications";
 import { crawlerError } from "../../const/crawler/errors";
+import { DNS_PRESETS } from "../../const/crawler/network-presets";
 import { bytes, crawlActive, items } from "../../utils/crawler/display";
 
 const props = defineProps<{ workspace: ReturnType<typeof useCrawlerJobs> }>();
-const { native, jobs, results, selected, pageOffset, assetOffset, proxy, refresh, refreshResults, selectJob } = props.workspace;
+const { native, jobs, results, selected, pageOffset, assetOffset, refresh, refreshResults, selectJob } = props.workspace;
 
 // Start with the source crawler defaults and leave the proxy unset until the user provides one.
+const proxy = ref("");
 const seedUrls = ref("");
 const mode = ref<CrawlMode>("auto");
 const maxPages = ref(100);
 const maxDepth = ref(5);
 const concurrency = ref(2);
 const delay = ref(500);
+const concurrencyValid = ref(true);
+const delayValid = ref(true);
 const domains = ref("");
 const exclusions = ref("");
 const respectRobots = ref(true);
@@ -52,6 +59,7 @@ async function chooseFolder() {
 }
 
 async function start() {
+  if (!concurrencyValid.value || !delayValid.value) return;
   if (starting.value || busy.value) return;
   starting.value = true;
   try {
@@ -100,8 +108,8 @@ function paginate(kind: "pages" | "assets", step: number) {
   <form class="crawler-panel crawler-stack" @submit.prevent="start">
     <div class="crawler-heading">
       <h1>New crawl</h1>
-      <button class="primary-button" type="submit" :disabled="!native || !seedUrls.trim() || starting || busy">
-        {{ starting ? "Starting…" : "Start crawl" }}
+      <button class="primary-button" type="submit" :disabled="!concurrencyValid || !delayValid || !native || !seedUrls.trim() || starting || busy">
+        {{ starting ? "Starting…" : "Crawl" }}
       </button>
     </div>
     <label class="crawler-field">
@@ -109,15 +117,19 @@ function paginate(kind: "pages" | "assets", step: number) {
       <textarea v-model="seedUrls" rows="2" required placeholder="https://example.com" />
       <small>Enter one URL per line.</small>
     </label>
-    <div class="crawler-grid">
-      <label class="crawler-field">
-        <span>Mode</span>
-        <select v-model="mode">
-          <option value="auto">Auto</option>
-          <option value="always">Browser</option>
-          <option value="never">Static</option>
-        </select>
-      </label>
+    <div class="form-grid">
+      <div class="crawler-field">
+        <label for="crawl-mode">Mode</label>
+        <AppSelect
+          id="crawl-mode"
+          v-model="mode"
+          :options="[
+            { value: 'auto', label: 'Auto' },
+            { value: 'always', label: 'Browser' },
+            { value: 'never', label: 'Static' },
+          ]"
+        />
+      </div>
       <label class="crawler-field">
         <span>Max pages</span>
         <input v-model.number="maxPages" type="number" min="1" max="4294967295" required />
@@ -128,39 +140,65 @@ function paginate(kind: "pages" | "assets", step: number) {
       </label>
     </div>
     <!-- Keep the asset location visible alongside the basic crawl settings. -->
-    <div class="crawler-grid">
-      <label class="crawler-field">
-        <span>Download path</span>
-        <input
-          v-model="assetFolder"
-          placeholder="WITS Tools app data"
-          :disabled="!assets || starting || busy"
-        />
-      </label>
-      <button
-        class="crawler-align-end"
-        type="button"
-        :disabled="!native || !assets || starting || busy"
-        @click="action('Could not open folder picker', chooseFolder)"
-      >
-        Choose folder
-      </button>
+    <div class="form-grid">
+      <div class="crawler-field form-grid-full">
+        <label for="crawl-download-path">Download path</label>
+        <div class="crawler-inline-control">
+          <input
+            id="crawl-download-path"
+            v-model="assetFolder"
+            placeholder="WITS Tools app data"
+            :disabled="!assets || starting || busy"
+          />
+          <button
+            class="crawler-folder-button"
+            type="button"
+            :disabled="!native || !assets || starting || busy"
+            @click="action('Could not open folder picker', chooseFolder)"
+          >
+            Choose folder
+          </button>
+        </div>
+      </div>
     </div>
     <details class="crawler-stack">
       <summary>Advanced settings</summary>
-      <div class="crawler-grid crawler-advanced">
-        <label class="crawler-field">
-          <span>Concurrency</span>
-          <input v-model.number="concurrency" type="number" min="1" max="20" required />
-        </label>
-        <label class="crawler-field">
-          <span>Request delay (ms)</span>
-          <input v-model.number="delay" type="number" min="0" required />
-        </label>
-        <label class="crawler-field">
-          <span>Proxy URL</span>
-          <input v-model="proxy" type="password" autocomplete="off" placeholder="Optional" />
-        </label>
+      <div class="form-grid crawler-advanced">
+        <div class="form-grid form-grid-full form-grid-sliders">
+          <!-- Keep precise entry available alongside both crawl sliders. -->
+          <AppSlider
+            id="crawl-concurrency"
+            v-model="concurrency"
+            v-model:valid="concurrencyValid"
+            class="crawler-field"
+            label="Concurrency"
+            :min="1"
+            :max="20"
+          />
+          <AppSlider
+            id="crawl-delay"
+            v-model="delay"
+            v-model:valid="delayValid"
+            class="crawler-field"
+            label="Request delay (ms)"
+            :min="0"
+            :max="5000"
+            unit="ms"
+            allow-above-max
+          />
+        </div>
+        <!-- Use the supported public DNS shortcuts and keep credential-bearing URLs masked. -->
+        <AppInputSelect
+          id="crawl-proxy"
+          v-model="proxy"
+          class="crawler-field"
+          label="Proxy or DNS"
+          type="password"
+          autocomplete="off"
+          placeholder="Proxy URL or DNS endpoint"
+          help="Choose a public resolver or enter a custom proxy or DNS endpoint."
+          :options="DNS_PRESETS"
+        />
         <label class="crawler-field">
           <span>Allowed domains</span>
           <textarea v-model="domains" rows="2" placeholder="One domain per line" />

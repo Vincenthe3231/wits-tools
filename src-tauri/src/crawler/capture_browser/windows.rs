@@ -14,6 +14,7 @@ use crate::crawler::{
     diagnostics::{Trace, origin},
     http_url,
     media::{Candidate, classify},
+    network,
 };
 
 /// Create a private browsing window and install the observer before loading the page.
@@ -21,11 +22,19 @@ pub(in crate::crawler) async fn open(
     app: AppHandle,
     browser: CaptureBrowser,
     url: &str,
+    proxy: Option<String>,
 ) -> Result<()> {
     let url = http_url(url)?;
+    let endpoint = network::proxy(proxy.as_deref())?;
     if let Some(window) = app.get_webview_window(LABEL) {
+        // WebView2 cannot change the proxy of an existing browser environment.
+        if browser.0.lock().map_err(|_| Error::Busy)?.route != proxy {
+            return Err(Error::CaptureRouteChanged);
+        }
         // Reuse the private session for another page, including cookies set during sign-in.
-        if window.url().ok().as_ref() != Some(&url) {
+        if window.url().ok().as_ref() != Some(&url)
+            || browser.0.lock().map_err(|_| Error::Busy)?.status == "failed"
+        {
             window
                 .navigate(url)
                 .map_err(|_| Error::CaptureUnavailable)?;
@@ -38,7 +47,17 @@ pub(in crate::crawler) async fn open(
         "opening private window origin={}",
         origin(url.as_str())
     ));
-    let window = WebviewWindowBuilder::new(
+    let relay = if let Some(endpoint) = &endpoint {
+        crate::crawler::proxy::DnsRelay::start(endpoint).await?
+    } else {
+        None
+    };
+    let window_route = relay.as_ref().map(|relay| &relay.url).or(endpoint.as_ref());
+    // WebView2 fixes its routing at environment creation. Give configured routes a private profile.
+    let profile = window_route
+        .map(|_| tempfile::tempdir().map_err(|_| Error::File))
+        .transpose()?;
+    let mut builder = WebviewWindowBuilder::new(
         &app,
         LABEL,
         WebviewUrl::External("about:blank".parse().unwrap()),
@@ -48,24 +67,41 @@ pub(in crate::crawler) async fn open(
     .incognito(true)
     .visible(false)
     .on_navigation(|url| matches!(url.scheme(), "http" | "https") || url.as_str() == "about:blank")
-    .on_new_window(|_, _| NewWindowResponse::Deny)
-    .build()
-    .map_err(|_| {
+    .on_new_window(|_, _| NewWindowResponse::Deny);
+    if let (Some(route), Some(profile)) = (window_route, &profile) {
+        if !matches!(route.scheme(), "http" | "socks5")
+            || !route.username().is_empty()
+            || route.password().is_some()
+        {
+            return Err(Error::InvalidProxy);
+        }
+        builder = builder
+            .proxy_url(route.clone())
+            .data_directory(profile.path().into());
+    }
+    let window = builder.build().map_err(|_| {
         trace.record(format_args!("window creation failed"));
         Error::CaptureUnavailable
     })?;
 
+    if let Ok(mut session) = browser.0.lock() {
+        session.status = "loading";
+        session.route = proxy.clone();
+    }
+
     // Destroying the window releases the native observer and any unselected credentials.
     let capture = browser.clone();
     window.on_window_event(move |event| {
+        // The observer window owns the relay and profile until its native handle is destroyed.
+        let _routing = (&relay, &profile);
         if matches!(event, WindowEvent::Destroyed)
             && let Ok(mut sources) = capture.0.lock()
         {
             trace.record(format_args!(
                 "window closed captured_sources={}",
-                sources.len()
+                sources.sources.len()
             ));
-            sources.clear();
+            *sources = Default::default();
         }
     });
     let (ready, attached) = tokio::sync::oneshot::channel();
@@ -73,6 +109,7 @@ pub(in crate::crawler) async fn open(
         // Tauri schedules this closure on the thread owning the WebView2 controller.
         let result = unsafe {
             webview.controller().CoreWebView2().and_then(|view| {
+                let starting_browser = browser.clone();
                 let starting = NavigationStartingEventHandler::create(Box::new(move |_, args| {
                     if let Some(args) = args {
                         let mut uri = PWSTR::null();
@@ -80,6 +117,10 @@ pub(in crate::crawler) async fn open(
                         args.Uri(&mut uri)?;
                         let uri = take_pwstr(uri);
                         args.NavigationId(&mut id)?;
+                        if let Ok(mut session) = starting_browser.0.lock() {
+                            session.navigation = Some(id);
+                            session.status = "loading";
+                        }
                         let mut redirected = windows_core::BOOL(0);
                         args.IsRedirected(&mut redirected)?;
                         trace.record(format_args!(
@@ -91,10 +132,11 @@ pub(in crate::crawler) async fn open(
                     Ok(())
                 }));
                 view.add_NavigationStarting(&starting, &mut 0)?;
+                let completed_browser = browser.clone();
                 let completed =
                     NavigationCompletedEventHandler::create(Box::new(move |_, args| {
                         if let Some(args) = args {
-                            log_navigation(trace, &args)?;
+                            log_navigation(trace, &completed_browser, &args)?;
                         }
                         Ok(())
                     }));
@@ -103,7 +145,7 @@ pub(in crate::crawler) async fn open(
                 let observer =
                     WebResourceResponseReceivedEventHandler::create(Box::new(move |_, args| {
                         if let Some(args) = args {
-                            match candidate(&args, trace) {
+                            match candidate(&args, trace, proxy.as_deref()) {
                                 Ok(Some((url, candidate))) => browser.observe(url, candidate),
                                 Ok(None) => {}
                                 Err(error) => trace.record(format_args!(
@@ -141,6 +183,7 @@ pub(in crate::crawler) async fn open(
 /// Report navigation outcomes separately from media responses, with no URL or header values.
 fn log_navigation(
     trace: Trace,
+    browser: &CaptureBrowser,
     args: &ICoreWebView2NavigationCompletedEventArgs,
 ) -> windows_core::Result<()> {
     // The event object and its newer interface are used only on the WebView2 thread.
@@ -161,6 +204,16 @@ fn log_navigation(
                     .filter(|_| status != 0)
                     .map(|_| status)
             });
+        // Ignore completion from a navigation superseded by a newer request.
+        if let Ok(mut session) = browser.0.lock()
+            && session.navigation == Some(id)
+        {
+            session.status = if success.as_bool() && http_status.is_none_or(|status| status < 400) {
+                "ready"
+            } else {
+                "failed"
+            };
+        }
         let reason = match error {
             COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT => "connection timeout",
             COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED => "DNS lookup failed",
@@ -186,6 +239,7 @@ fn log_navigation(
 fn candidate(
     args: &ICoreWebView2WebResourceResponseReceivedEventArgs,
     trace: Trace,
+    proxy: Option<&str>,
 ) -> windows_core::Result<Option<(String, Candidate)>> {
     // All COM methods run inside the WebView callback, and take_pwstr releases returned strings.
     unsafe {
@@ -240,8 +294,10 @@ fn candidate(
             headers.iter().any(|(name, _)| name == "authorization"),
             headers.iter().any(|(name, _)| name == "referer")
         ));
-        Ok(Candidate::new(&uri, &mime, headers, None)
-            .ok()
-            .map(|candidate| (uri, candidate)))
+        Ok(
+            Candidate::new(&uri, &mime, headers, proxy.map(str::to_owned))
+                .ok()
+                .map(|candidate| (uri, candidate)),
+        )
     }
 }

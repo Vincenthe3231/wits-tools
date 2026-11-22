@@ -285,8 +285,15 @@ async fn transfers_ranges_encryption_dash_conflict_and_cancel() {
     let (base, ranges, _server) = fixture().await;
     let dir = tempfile::tempdir().unwrap();
     let fetch = |name: &str| {
+        // Check duration on every progress update, including the first metadata event.
+        let expected_duration = match name {
+            "master.m3u8" => Some(2.0),
+            "manifest.mpd" => Some(3.0),
+            _ => None,
+        };
         let request = Download {
             url: format!("{base}/{name}"),
+            workers: Some(if name == "master.m3u8" { 1 } else { 16 }),
             ..Download::default()
         };
         media::download(
@@ -294,7 +301,7 @@ async fn transfers_ranges_encryption_dash_conflict_and_cancel() {
             None,
             dir.path().into(),
             CancellationToken::new(),
-            |_| {},
+            move |progress| assert_eq!(progress.duration_seconds, expected_duration),
         )
     };
     let direct = fetch("direct.mp4").await.unwrap();

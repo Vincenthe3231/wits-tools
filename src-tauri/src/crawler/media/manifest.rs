@@ -24,6 +24,7 @@ pub(super) struct Segment {
 }
 
 pub(super) struct Variant {
+    pub duration_seconds: Option<f64>,
     pub format: Format,
     pub url: Option<Url>,
     pub segments: Vec<Segment>,
@@ -31,6 +32,7 @@ pub(super) struct Variant {
 
 #[derive(Default)]
 pub(super) struct Playlist {
+    pub duration_seconds: Option<f64>,
     pub variants: Vec<Variant>,
     pub segments: Vec<Segment>,
 }
@@ -44,12 +46,25 @@ pub(super) fn hls(bytes: &[u8], base: &Url) -> Result<Playlist> {
     }
     let mut playlist = Playlist::default();
     let mut variant = None;
+    // Report a playback duration only for a complete playlist with timing for every part.
+    let mut end_list = false;
+    let mut next_duration = None;
+    let mut timed_segments = 0;
+    let mut duration_sum = 0.0;
     let mut sequence = 0_u64;
     let mut key = None;
     let mut byte_range = None;
     let mut previous_range: Option<(Url, u64)> = None;
     for line in lines.filter(|line| !line.is_empty()) {
-        if let Some(value) = line.strip_prefix("#EXT-X-STREAM-INF:") {
+        if line == "#EXT-X-ENDLIST" {
+            end_list = true;
+        } else if let Some(value) = line.strip_prefix("#EXTINF:") {
+            next_duration = value
+                .split(',')
+                .next()
+                .and_then(|part| part.trim().parse::<f64>().ok())
+                .filter(|seconds| seconds.is_finite() && *seconds >= 0.0);
+        } else if let Some(value) = line.strip_prefix("#EXT-X-STREAM-INF:") {
             variant = Some(attributes(value));
         } else if let Some(value) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:") {
             sequence = value.parse().map_err(|_| Error::InvalidManifest)?;
@@ -81,6 +96,7 @@ pub(super) fn hls(bytes: &[u8], base: &Url) -> Result<Playlist> {
                     .unwrap_or_default();
                 let id = playlist.variants.len().to_string();
                 playlist.variants.push(Variant {
+                    duration_seconds: None,
                     format: Format { id, bandwidth },
                     url: Some(url),
                     segments: Vec::new(),
@@ -121,6 +137,10 @@ pub(super) fn hls(bytes: &[u8], base: &Url) -> Result<Playlist> {
                 key: key.clone(),
                 iv: iv.unwrap_or_else(|| u128::from(sequence).to_be_bytes()),
             });
+            if let Some(seconds) = next_duration.take() {
+                timed_segments += 1;
+                duration_sum += seconds;
+            }
             playlist.segments.push(Segment {
                 url,
                 range,
@@ -135,6 +155,11 @@ pub(super) fn hls(bytes: &[u8], base: &Url) -> Result<Playlist> {
     if variant.is_some() || (playlist.variants.is_empty() && playlist.segments.is_empty()) {
         return Err(Error::InvalidManifest);
     }
+    playlist.duration_seconds = (end_list
+        && timed_segments == playlist.segments.len()
+        && duration_sum > 0.0
+        && duration_sum.is_finite())
+    .then_some(duration_sum);
     Ok(playlist)
 }
 
@@ -366,6 +391,8 @@ pub(super) fn dash(bytes: &[u8], base: &Url) -> Result<Vec<Variant>> {
                     };
                 if !segments.is_empty() && segments.len() <= MAX_PARTS {
                     formats.push(Variant {
+                        duration_seconds: period_duration
+                            .filter(|value| value.is_finite() && *value > 0.0),
                         format: Format {
                             id: track.id,
                             bandwidth: track.bandwidth,

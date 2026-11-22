@@ -246,6 +246,7 @@ pub struct Progress {
     pub total_bytes: Option<u64>,
     pub segments: u32,
     pub total_segments: Option<u32>,
+    pub duration_seconds: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -301,6 +302,19 @@ pub async fn download(
     cancellation: CancellationToken,
     progress: impl Fn(Progress) + Send + Sync,
 ) -> Result<PathBuf> {
+    download_with_size(request, candidate, default_folder, cancellation, progress)
+        .await
+        .map(|(path, _)| path)
+}
+
+// Read the actual size while holding the output reservation, before another transfer can replace it.
+pub(super) async fn download_with_size(
+    request: Download,
+    candidate: Option<Candidate>,
+    default_folder: PathBuf,
+    cancellation: CancellationToken,
+    progress: impl Fn(Progress) + Send + Sync,
+) -> Result<(PathBuf, u64)> {
     let (transfer, hint) = Transfer::new(&request, candidate)?;
     let prepared = async {
         let (response, kind) = transfer.response(hint).await?;
@@ -342,8 +356,8 @@ pub async fn download(
                     &network::limited(response, MANIFEST_LIMIT).await?,
                     &final_url,
                 )?;
-                let segments = if playlist.variants.is_empty() {
-                    playlist.segments
+                let playlist = if playlist.variants.is_empty() {
+                    playlist
                 } else {
                     let selected = select(&playlist.variants, format)?;
                     let url = selected.url.as_ref().ok_or(Error::InvalidManifest)?;
@@ -353,10 +367,14 @@ pub async fn download(
                     }
                     let base = response.url().clone();
                     manifest::hls(&network::limited(response, MANIFEST_LIMIT).await?, &base)?
-                        .segments
                 };
                 transfer
-                    .segments(segments, file.as_ref(), &progress)
+                    .segments(
+                        playlist.segments,
+                        playlist.duration_seconds,
+                        file.as_ref(),
+                        &progress,
+                    )
                     .await?;
             }
             Kind::Dash => {
@@ -364,18 +382,24 @@ pub async fn download(
                     &network::limited(response, MANIFEST_LIMIT).await?,
                     &final_url,
                 )?;
+                let selected = select(&variants, format)?;
                 transfer
                     .segments(
-                        select(&variants, format)?.segments.clone(),
+                        selected.segments.clone(),
+                        selected.duration_seconds,
                         file.as_ref(),
                         &progress,
                     )
                     .await?;
             }
         }
-        Ok((file, output, reservation))
+        let size = tokio::fs::metadata(&file)
+            .await
+            .map_err(|_| Error::File)?
+            .len();
+        Ok((file, output, reservation, size))
     };
-    let (file, output, _reservation) = tokio::select! {
+    let (file, output, _reservation, size) = tokio::select! {
         biased;
         _ = cancellation.cancelled() => return Err(Error::Cancelled),
         result = prepared => result?,
@@ -394,7 +418,7 @@ pub async fn download(
             }
         })?;
     }
-    Ok(output)
+    Ok((output, size))
 }
 
 impl Transfer {
@@ -515,6 +539,10 @@ impl Transfer {
         progress: &(impl Fn(Progress) + Sync),
     ) -> Result<()> {
         let total = response.content_length();
+        progress(Progress {
+            total_bytes: total,
+            ..Progress::default()
+        });
         if let Some(total) = total.filter(|total| *total > RANGE_CHUNK && self.workers > 1) {
             let url = response.url().clone();
             if let Ok(probe) = self.fetch(&url, Some((0, 0))).await
@@ -548,6 +576,7 @@ impl Transfer {
     async fn segments(
         &self,
         segments: Vec<Segment>,
+        duration_seconds: Option<f64>,
         output: &Path,
         progress: &(impl Fn(Progress) + Sync),
     ) -> Result<()> {
@@ -555,8 +584,19 @@ impl Transfer {
             return Err(Error::InvalidManifest);
         }
         let count = segments.len() as u32;
-        self.assemble(segments, output, None, Some(count), progress)
-            .await
+        // Publish manifest metadata immediately, then carry it through progress updates.
+        progress(Progress {
+            total_segments: Some(count),
+            duration_seconds,
+            ..Progress::default()
+        });
+        self.assemble(segments, output, None, Some(count), &|update| {
+            progress(Progress {
+                duration_seconds,
+                ..update
+            });
+        })
+        .await
     }
 
     /// Download a bounded window in parallel, then append disk-backed parts in manifest order.
@@ -605,6 +645,7 @@ impl Transfer {
                 total_bytes: total,
                 segments: completed,
                 total_segments: count,
+                ..Progress::default()
             });
         }
         file.flush().await.map_err(|_| Error::File)?;

@@ -3,7 +3,13 @@
   height: 100%;
   min-width: 0;
   overflow: auto;
-  padding: 1rem;
+  padding: clamp(0.75rem, 3vw, 1.75rem);
+}
+
+/* Center the tabs, notices, and both views on the same column. */
+.crawler-workspace > :is(.crawler-tabs, .crawler-notice, .crawler-tab-content) {
+  max-width: 64rem;
+  margin-inline: auto;
 }
 
 .crawler-tabs {
@@ -22,7 +28,6 @@
 .crawler-tab-content {
   display: grid;
   gap: 1rem;
-  max-width: 66rem;
 }
 
 .crawler-tab-content[data-state="inactive"] {
@@ -74,14 +79,17 @@
   gap: 0.15rem;
 }
 
-.crawler-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
-  gap: 0.65rem;
+.crawler-advanced {
+  margin-block: 0.75rem;
 }
 
-.crawler-advanced {
-  margin-block: 0.65rem;
+/* Group a field label and its action without taking width from the input below. */
+.crawler-field-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .crawler-field {
@@ -92,19 +100,19 @@
   font-size: 0.875rem;
 }
 
-.crawler-field :is(input, textarea, select) {
+.crawler-field :is(input, textarea) {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  min-height: 2rem;
-  padding: 0.25rem 0.45rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.65rem;
   border: 1px solid var(--text-muted);
-  border-radius: 0.35rem;
+  border-radius: 0.375rem;
   background: var(--surface-editor);
   color: var(--text-primary);
 }
 
-.crawler-field :is(textarea, select):focus-visible {
+.crawler-field :is(input, textarea):focus-visible {
   outline: 2px solid var(--accent-strong);
   outline-offset: 2px;
 }
@@ -126,9 +134,29 @@
   color: var(--text-muted);
 }
 
-.crawler-align-end {
-  align-self: end;
-  justify-self: start;
+/* Align field actions with the input box, independent of labels and helper text. */
+.crawler-inline-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.4rem;
+}
+
+button.crawler-folder-button {
+  min-height: 2.25rem;
+  border-color: var(--text-muted);
+  background: var(--surface-toolbar);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+button.crawler-folder-button:hover:not(:disabled) {
+  background: var(--surface-selected);
+}
+
+button.crawler-folder-button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
 }
 
 .crawler-url {

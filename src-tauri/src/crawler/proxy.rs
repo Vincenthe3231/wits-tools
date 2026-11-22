@@ -11,7 +11,41 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+use super::dns::Doh;
 use super::{Error, Result, http_url, media};
+
+/// Scope the browser adapter to the browser lifetime, including early returns and cancellation.
+pub(super) struct DnsRelay {
+    pub url: url::Url,
+    _stop: tokio_util::sync::DropGuard,
+}
+
+impl DnsRelay {
+    pub async fn start(endpoint: &url::Url) -> Result<Option<Self>> {
+        if endpoint.scheme() != "doh" {
+            return Ok(None);
+        }
+        let resolver = Doh::new(endpoint.clone())?;
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(|_| Error::Network)?;
+        let address = listener.local_addr().map_err(|_| Error::Network)?;
+        let url = url::Url::parse(&format!("http://{address}")).map_err(|_| Error::Network)?;
+        let client = super::network::client(Some(endpoint), false)?;
+        let stop = CancellationToken::new();
+        tokio::spawn(serve(
+            listener,
+            client,
+            Some(resolver),
+            stop.clone(),
+            |_, _| {},
+        ));
+        Ok(Some(Self {
+            url,
+            _stop: stop.drop_guard(),
+        }))
+    }
+}
 
 /// Bind only to loopback and return promptly once the user interrupts the command.
 pub async fn run(
@@ -28,6 +62,17 @@ pub async fn run(
         .connect_timeout(Duration::from_secs(15))
         .build()
         .map_err(|_| Error::Network)?;
+    serve(listener, client, None, stop, found).await
+}
+
+// Share the HTTP forwarding and CONNECT implementation with the opt-in CLI proxy.
+async fn serve(
+    listener: TcpListener,
+    client: reqwest::Client,
+    resolver: Option<Arc<Doh>>,
+    stop: CancellationToken,
+    found: impl Fn(String, media::Kind) + Send + Sync + 'static,
+) -> Result<()> {
     let transfers = Arc::new(Semaphore::new(32));
     let found = Arc::new(found);
     loop {
@@ -41,10 +86,18 @@ pub async fn run(
         let found = Arc::clone(&found);
         let client = client.clone();
         let stop = stop.clone();
+        let resolver = resolver.clone();
         tokio::spawn(async move {
             let _permit = permit;
-            let service =
-                service_fn(|request| forward(request, &client, found.as_ref(), stop.clone()));
+            let service = service_fn(|request| {
+                forward(
+                    request,
+                    &client,
+                    resolver.as_deref(),
+                    found.as_ref(),
+                    stop.clone(),
+                )
+            });
             let mut builder = hyper::server::conn::http1::Builder::new();
             builder
                 .timer(TokioTimer::new())
@@ -60,6 +113,7 @@ pub async fn run(
 async fn forward(
     mut request: Request<Incoming>,
     client: &reqwest::Client,
+    resolver: Option<&Doh>,
     found: &impl Fn(String, media::Kind),
     stop: CancellationToken,
 ) -> std::result::Result<Response<Body>, std::convert::Infallible> {
@@ -72,8 +126,22 @@ async fn forward(
             return Ok(status(StatusCode::BAD_REQUEST));
         };
         let host = authority.as_str().to_owned();
-        let Ok(Ok(remote)) =
-            tokio::time::timeout(Duration::from_secs(15), TcpStream::connect(&host)).await
+        let Ok(Ok(remote)) = tokio::time::timeout(Duration::from_secs(15), async {
+            // Preserve the original hostname in the TLS tunnel while resolving its socket here.
+            if let Some(resolver) = resolver
+                && host.parse::<std::net::SocketAddr>().is_err()
+            {
+                let (name, port) = host.rsplit_once(':').ok_or(Error::Network)?;
+                let addresses = resolver
+                    .addresses(name, port.parse().map_err(|_| Error::Network)?)
+                    .await?;
+                return TcpStream::connect(addresses.as_slice())
+                    .await
+                    .map_err(|_| Error::Network);
+            }
+            TcpStream::connect(&host).await.map_err(|_| Error::Network)
+        })
+        .await
         else {
             return Ok(status(StatusCode::BAD_GATEWAY));
         };

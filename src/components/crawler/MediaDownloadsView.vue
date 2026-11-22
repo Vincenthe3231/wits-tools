@@ -1,18 +1,22 @@
-<!-- Discovers media, enables selected-tab fallback, and tracks native downloads. -->
+<!-- Captures media in WebView2 and tracks native downloads. -->
 <script setup lang="ts">
 import { ref, shallowRef } from "vue";
 
+import AppInputSelect from "../AppInputSelect.vue";
+import AppSlider from "../AppSlider.vue";
 import { crawler } from "../../api/crawler";
-import type { MediaSource, Pairing } from "../../api/crawler";
+import type { MediaSource } from "../../api/crawler";
 import type { useCrawlerJobs } from "../../composables/crawler/use-crawler-jobs";
 import { notify } from "../../composables/use-notifications";
 import { crawlerError } from "../../const/crawler/errors";
-import { bytes, downloadActive, downloadPercent } from "../../utils/crawler/display";
+import { DNS_PRESETS } from "../../const/crawler/network-presets";
+import { bytes, downloadActive, downloadPercent, mediaTime } from "../../utils/crawler/display";
 
 const props = defineProps<{ workspace: ReturnType<typeof useCrawlerJobs> }>();
-const { native, downloads, captured, browserSources, captureActive, proxy, refresh } = props.workspace;
+const { native, downloads, browserCapture, refresh } = props.workspace;
 
 // Retain each workflow's input while switching modes and keep secrets out of displayed results.
+const proxy = ref("");
 const mode = ref<"page" | "direct">("page");
 const url = ref("");
 const folder = ref("");
@@ -20,10 +24,8 @@ const filename = ref("");
 const format = ref("best");
 const formats = shallowRef<{ id: string; bandwidth: number }[]>([]);
 const overwrite = ref(false);
-const discovering = ref(false);
-const searched = ref(false);
-const sources = shallowRef<MediaSource[]>([]);
-const pairing = shallowRef<Pairing>();
+const workers = ref(4);
+const workersValid = ref(true);
 const busy = ref(false);
 
 async function action(title: string, run: () => Promise<unknown>) {
@@ -38,9 +40,10 @@ async function action(title: string, run: () => Promise<unknown>) {
   }
 }
 
-async function download(source?: MediaSource, fromExtension = false) {
+async function download(source?: MediaSource) {
+  if (!workersValid.value) return;
   await action("Could not start download", async () => {
-    await crawler.download(request(source), source?.id ?? null, fromExtension);
+    await crawler.download(request(source), source?.id ?? null);
     await refresh();
   });
 }
@@ -49,39 +52,24 @@ async function download(source?: MediaSource, fromExtension = false) {
 function request(source?: MediaSource) {
   return { url: source ? "" : url.value.trim(), folder: folder.value || null,
     filename: filename.value.trim() || null, format: format.value.trim() || "best",
-    proxy: proxy.value.trim() || null, overwrite: overwrite.value };
+    proxy: proxy.value.trim() || null, overwrite: overwrite.value, workers: workers.value };
 }
 
-async function inspect(source?: MediaSource, fromExtension = false) {
+async function inspect(source?: MediaSource) {
   await action("Could not inspect formats", async () => {
-    formats.value = (await crawler.mediaInfo(request(source), source?.id ?? null, fromExtension)).formats;
+    formats.value = (await crawler.mediaInfo(request(source), source?.id ?? null)).formats;
     if (!formats.value.length) notify({ severity: "info", title: "No selectable variants" });
   });
 }
 
-// Keep discovery independently cancellable while transfers continue in the background.
+// Start the private capture session or download a known media URL.
 async function submit() {
+  if (!workersValid.value) return;
   if (mode.value === "direct") return download();
-  if (discovering.value) return;
-  discovering.value = true;
-  searched.value = false;
-  sources.value = [];
-  try {
-    sources.value = await crawler.discover(url.value.trim(), proxy.value.trim() || null);
-    searched.value = true;
-    // Report the outcome even when the results section is below the visible form.
-    const count = sources.value.length;
-    notify({
-      severity: count ? "success" : "info",
-      title: count ? `Detected ${count} media ${count === 1 ? "source" : "sources"}` : "No downloadable media detected",
-    });
-  } catch (error) {
-    if (!(error && typeof error === "object" && "code" in error && error.code === "cancelled")) {
-      notify({ severity: "error", title: "Could not detect media", description: crawlerError(error) });
-    }
-  } finally {
-    discovering.value = false;
-  }
+  await action("Could not open capture browser", async () => {
+    await crawler.openCaptureBrowser(url.value.trim(), proxy.value.trim() || null);
+    await refresh();
+  });
 }
 
 async function chooseFolder() {
@@ -89,39 +77,6 @@ async function chooseFolder() {
   if (selected) folder.value = selected;
 }
 
-// Use a separate browser when playback needs an interactive session.
-async function openCaptureBrowser() {
-  await action("Could not open capture browser", async () => {
-    await crawler.openCaptureBrowser(url.value.trim());
-    notify({ severity: "info", title: "Play media in the capture browser", description: "Keep the window open while selecting a stream." });
-  });
-}
-
-async function enableCapture() {
-  await crawler.startCapture();
-  captureActive.value = true;
-}
-
-// Register the installed host and open the listener so the extension can start capture.
-async function registerBridge() {
-  await action("Could not set up capture bridge", async () => {
-    await crawler.registerCapture();
-    await enableCapture();
-    notify({ severity: "success", title: "Capture bridge ready" });
-  });
-}
-
-async function pair() {
-  pairing.value = await crawler.pairCapture();
-  captureActive.value = true;
-}
-
-async function stopCapture() {
-  await crawler.stopCapture();
-  captureActive.value = false;
-  captured.value = [];
-  pairing.value = undefined;
-}
 </script>
 
 <template>
@@ -129,139 +84,103 @@ async function stopCapture() {
   <form class="crawler-panel crawler-stack" @submit.prevent="submit">
     <div class="crawler-heading">
       <h1>Media Downloads</h1>
-      <button class="primary-button" type="submit" :disabled="!native || !url.trim() || discovering || busy">
-        {{ mode === "direct" ? "Download" : discovering ? "Detecting…" : "Detect media" }}
+      <button class="primary-button" type="submit" :disabled="!native || !url.trim() || busy || !workersValid">
+        {{ mode === "direct" ? "Download" : "Capture" }}
       </button>
     </div>
     <fieldset class="crawler-actions">
       <legend class="sr-only">URL type</legend>
-      <label><input v-model="mode" type="radio" value="page" :disabled="discovering" /> Page URL</label>
-      <label><input v-model="mode" type="radio" value="direct" :disabled="discovering" /> Direct media URL</label>
+      <label><input v-model="mode" type="radio" value="page" /> Page URL</label>
+      <label><input v-model="mode" type="radio" value="direct" /> Direct media URL</label>
     </fieldset>
     <label class="crawler-field">
       <span>{{ mode === "page" ? "Page URL" : "Media file, HLS playlist, or DASH manifest URL" }}</span>
-      <input v-model="url" type="url" placeholder="https://example.com" required :disabled="discovering" />
+      <input v-model="url" type="url" placeholder="https://example.com" required />
     </label>
-    <!-- Offer an extension-free interactive session alongside automatic detection. -->
-    <button
-      v-if="mode === 'page'"
-      class="self-start"
-      type="button"
-      :disabled="!native || !url.trim() || busy"
-      @click="openCaptureBrowser"
-    >
-      Open in capture browser
-    </button>
-    <div v-if="discovering" class="crawler-heading">
-      <p class="crawler-meta" role="status">Checking the page and waiting for player requests…</p>
-      <button type="button" @click="action('Could not cancel discovery', crawler.cancelDiscovery)">Cancel discovery</button>
-    </div>
     <details class="crawler-stack">
       <summary>Download settings</summary>
-      <div class="crawler-grid crawler-advanced">
-        <label class="crawler-field">
-          <span>Save to folder</span>
-          <input v-model="folder" placeholder="Windows Downloads" />
-        </label>
-        <button class="crawler-align-end" type="button" :disabled="!native || busy"
-          @click="action('Could not open folder picker', chooseFolder)">Choose folder</button>
+      <div class="form-grid crawler-advanced">
+        <!-- Use the same full-width control as Page URL and put the picker beside its label. -->
+        <div class="crawler-field form-grid-full">
+          <div class="crawler-field-heading">
+            <label for="media-save-folder">Save to folder</label>
+            <button
+              class="crawler-folder-button"
+              type="button"
+              :disabled="!native || busy"
+              @click="action('Could not open folder picker', chooseFolder)"
+            >
+              Choose folder
+            </button>
+          </div>
+          <input id="media-save-folder" v-model="folder" placeholder="Windows Downloads" />
+        </div>
         <label class="crawler-field">
           <span>Filename</span>
           <input v-model="filename" placeholder="From media URL" />
         </label>
-        <label class="crawler-field">
-          <span>Format</span>
-          <input v-model="format" list="crawler-formats" placeholder="best" />
-          <datalist id="crawler-formats">
-            <option value="best" />
-            <option value="worst" />
-            <option v-for="variant in formats" :key="variant.id" :value="variant.id">{{ variant.bandwidth }} bps</option>
-          </datalist>
-          <small>Enter best, worst, or a format ID.</small>
-        </label>
-        <label class="crawler-field">
-          <span>Proxy URL</span>
-          <input v-model="proxy" type="password" autocomplete="off" placeholder="Optional" />
-        </label>
+        <!-- Preserve manual format IDs alongside presets discovered from the manifest. -->
+        <AppInputSelect
+          id="media-format"
+          v-model="format"
+          class="crawler-field"
+          label="Format"
+          placeholder="best"
+          help="Enter best, worst, or a format ID."
+          :options="[
+            { value: 'best', label: 'Best' },
+            { value: 'worst', label: 'Worst' },
+            ...formats.map(({ id, bandwidth }) => ({ value: id, label: `${id} · ${bandwidth} bps` })),
+          ]"
+        />
+        <AppInputSelect
+          id="media-proxy"
+          v-model="proxy"
+          class="crawler-field"
+          label="Proxy or DNS"
+          type="password"
+          autocomplete="off"
+          placeholder="Proxy URL or DNS endpoint"
+          help="Reopen the capture browser after changing this setting."
+          :options="DNS_PRESETS"
+        />
+        <div class="form-grid form-grid-full form-grid-sliders">
+          <AppSlider
+            id="media-workers"
+            v-model="workers"
+            v-model:valid="workersValid"
+            class="crawler-field"
+            label="Download workers"
+            :min="1"
+            :max="16"
+            help="Parallel segments or byte ranges per download."
+          />
+        </div>
       </div>
       <button v-if="mode === 'direct'" type="button" :disabled="!native || !url.trim() || busy" @click="inspect()">Inspect formats</button>
       <label class="crawler-check"><input v-model="overwrite" type="checkbox" /> Replace an existing file after a successful download</label>
     </details>
   </form>
 
-  <!-- Each detected manifest is a download choice. Observed segments stay grouped with it. -->
-  <section v-if="searched || sources.length" class="crawler-stack" aria-labelledby="detected-media">
-    <h2 id="detected-media">Detected media</h2>
-    <p v-if="!sources.length" class="crawler-notice" role="status">
-      No downloadable media requests detected. If you have the stream link, use Direct media URL.
-    </p>
-    <ul v-else class="crawler-stack">
-      <li v-for="source in sources" :key="source.id" class="crawler-panel crawler-heading">
+  <!-- Show navigation feedback and streams from the current capture window. -->
+  <section v-if="browserCapture.status !== 'closed'" class="crawler-panel crawler-stack" aria-labelledby="browser-sources">
+    <h2 id="browser-sources">Captured streams</h2>
+    <p v-if="browserCapture.status === 'loading'" class="crawler-meta" role="status">Opening the page…</p>
+    <p v-else-if="browserCapture.status === 'failed'" class="crawler-error" role="status">The capture browser could not load the page. Check the address or network settings and try again.</p>
+    <p v-else-if="!browserCapture.sources.length" class="crawler-meta" role="status">Play the media in the capture browser to detect streams.</p>
+    <ul v-if="browserCapture.sources.length" class="crawler-stack">
+      <li v-for="source in browserCapture.sources" :key="source.id" class="crawler-heading">
         <div class="crawler-stack crawler-compact">
           <p class="crawler-url" :title="source.url">{{ source.url }}</p>
-          <p class="crawler-meta">{{ source.kind.toUpperCase() }}<span v-if="source.segments"> · {{ source.segments }} observed segments</span></p>
+          <p class="crawler-meta">{{ source.kind.toUpperCase() }}</p>
         </div>
         <div class="crawler-actions">
           <button v-if="source.kind !== 'direct'" type="button" :disabled="busy" @click="inspect(source)">Inspect formats</button>
-          <button type="button" :disabled="busy" @click="download(source)">Download</button>
+          <button type="button" :disabled="busy || !workersValid" @click="download(source)">Download</button>
         </div>
       </li>
     </ul>
   </section>
-
-  <!-- Present embedded-browser streams independently of extension capture. -->
-  <section v-if="browserSources.length" class="crawler-panel crawler-stack" aria-labelledby="browser-sources">
-    <h2 id="browser-sources">Capture browser streams</h2>
-    <ul class="crawler-stack">
-      <li v-for="source in browserSources" :key="source.id" class="crawler-heading">
-        <div class="crawler-stack crawler-compact">
-          <p class="crawler-url" :title="source.url">{{ source.url }}</p>
-          <p class="crawler-meta">{{ source.kind.toUpperCase() }}</p>
-        </div>
-        <div class="crawler-actions">
-          <button v-if="source.kind !== 'direct'" type="button" :disabled="busy" @click="inspect(source, true)">Inspect formats</button>
-          <button type="button" :disabled="busy" @click="download(source, true)">Download</button>
-        </div>
-      </li>
-    </ul>
-  </section>
-
-  <!-- Use the optional extension when playback depends on an already-open browser tab. -->
-  <details class="crawler-panel crawler-stack">
-    <summary>Selected-tab capture</summary>
-    <p class="crawler-meta">Use the WITS Tools Capture extension to detect media in a tab you already have open.</p>
-    <div class="crawler-actions">
-      <button type="button" :disabled="!native || busy"
-        @click="registerBridge">
-        Register browser bridge
-      </button>
-      <button type="button" :disabled="!native || busy || captureActive"
-        @click="action('Could not enable capture', enableCapture)">Enable capture</button>
-      <button type="button" :disabled="!native || busy" @click="action('Could not create pairing code', pair)">Generate pairing code</button>
-      <button v-if="captureActive" type="button" :disabled="busy"
-        @click="action('Could not stop capture', stopCapture)">Stop capture</button>
-    </div>
-    <label v-if="pairing" class="crawler-field">
-      <span>Pairing code</span>
-      <input :value="pairing.code" readonly @focus="($event.target as HTMLInputElement).select()" />
-      <small>Paste the code into the extension within {{ pairing.expires_in_seconds / 60 }} minutes.</small>
-    </label>
-    <p v-if="captureActive && !captured.length" class="crawler-meta" role="status">
-      Start capture in the extension and play the media in that tab.
-    </p>
-    <ul v-if="captured.length" class="crawler-stack">
-      <li v-for="source in captured" :key="source.id" class="crawler-heading">
-        <div class="crawler-stack crawler-compact">
-          <p class="crawler-url" :title="source.url">{{ source.url }}</p>
-          <p class="crawler-meta">{{ source.kind.toUpperCase() }}</p>
-        </div>
-        <div class="crawler-actions">
-          <button v-if="source.kind !== 'direct'" type="button" :disabled="busy" @click="inspect(source, true)">Inspect formats</button>
-          <button type="button" :disabled="busy" @click="download(source, true)">Download</button>
-        </div>
-      </li>
-    </ul>
-  </details>
 
   <!-- Show transfer state, progress, and recovery details even after a notification closes. -->
   <section class="crawler-stack" aria-labelledby="media-history">
@@ -271,13 +190,20 @@ async function stopCapture() {
       <div class="crawler-heading">
         <p class="crawler-meta">
           <span class="crawler-status" :data-status="job.status">{{ job.status }}</span>
-          {{ bytes(job.progress.bytes) }}<span v-if="job.progress.totalBytes"> of {{ bytes(job.progress.totalBytes) }}</span>
+          {{ bytes(job.fileSize ?? job.progress.bytes) }}<span v-if="job.fileSize == null && job.progress.totalBytes != null"> of {{ bytes(job.progress.totalBytes) }}</span>
           <span v-if="job.progress.totalSegments"> · {{ job.progress.segments }} of {{ job.progress.totalSegments }} segments</span>
         </p>
         <button v-if="downloadActive(job)" type="button" :disabled="busy"
           @click="action('Could not cancel download', () => crawler.cancelDownload(job.id))">Cancel download</button>
       </div>
       <progress v-if="downloadActive(job)" :value="downloadPercent(job)" max="100" aria-label="Download progress" />
+      <p class="crawler-meta">
+        {{ job.durationSeconds == null ? "Duration unavailable" : "Duration " + mediaTime(job.durationSeconds) }}
+        <span v-if="downloadActive(job)">
+          · {{ job.etaSeconds != null ? "ETA " + mediaTime(job.etaSeconds) :
+            job.progress.totalBytes || job.progress.totalSegments || job.status === "queued" ? "Estimating…" : "ETA unavailable" }}
+        </span>
+      </p>
       <p v-if="job.output" class="crawler-meta crawler-url" :title="job.output">{{ job.output }}</p>
       <p v-if="job.error" class="crawler-error">{{ crawlerError(job.error) }}</p>
     </article>

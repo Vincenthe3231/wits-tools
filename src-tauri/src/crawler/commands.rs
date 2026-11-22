@@ -1,10 +1,10 @@
 //! Connects the typed desktop boundary to crawler jobs, media transfers, and native pickers.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde::Serialize;
@@ -15,18 +15,16 @@ use uuid::Uuid;
 
 use super::{
     Error, Result, browser_path,
-    capture::{Capture, Pairing},
-    capture_browser::CaptureBrowser,
+    capture_browser::{CaptureBrowser, CaptureSnapshot},
     crawl::{self, Config},
     data_dir,
-    media::{self, Candidate, Download, Progress, Source},
+    media::{self, Candidate, Download, Progress},
     storage::{Job, Results, Store},
 };
 
 #[derive(Clone, Default)]
 pub(crate) struct DesktopState {
     inner: Arc<Mutex<Jobs>>,
-    capture: Capture,
     capture_browser: CaptureBrowser,
 }
 
@@ -34,13 +32,12 @@ pub(crate) struct DesktopState {
 struct Jobs {
     crawls: HashMap<Uuid, CancellationToken>,
     transfers: Vec<Transfer>,
-    discovery: Option<CancellationToken>,
-    discovered: HashMap<Uuid, Candidate>,
     closing: bool,
 }
 
 struct Transfer {
     summary: TransferSummary,
+    samples: VecDeque<(Instant, u64)>,
     stop: CancellationToken,
 }
 
@@ -52,6 +49,9 @@ pub(crate) struct TransferSummary {
     status: &'static str,
     progress: Progress,
     output: Option<PathBuf>,
+    duration_seconds: Option<f64>,
+    file_size: Option<u64>,
+    eta_seconds: Option<u64>,
     error: Option<Error>,
 }
 
@@ -152,36 +152,16 @@ pub(crate) async fn crawler_media_info(
     state: State<'_, DesktopState>,
     request: Download,
     source: Option<Uuid>,
-    captured: bool,
 ) -> Result<media::Info> {
-    let candidate = state.resolve_source(source, captured, request.proxy.clone())?;
+    let candidate = state.resolve_source(source)?;
     media::info(&request, candidate).await
 }
 
 impl DesktopState {
     /// Pair a safe source ID with the captured request context only inside the native process.
-    fn resolve_source(
-        &self,
-        source: Option<Uuid>,
-        captured: bool,
-        proxy: Option<String>,
-    ) -> Result<Option<Candidate>> {
+    fn resolve_source(&self, source: Option<Uuid>) -> Result<Option<Candidate>> {
         source
-            .map(|id| {
-                if captured {
-                    if let Some(candidate) = self.capture_browser.source(id)? {
-                        return Ok(candidate);
-                    }
-                    return self.capture.source(id, proxy);
-                }
-                self.inner
-                    .lock()
-                    .map_err(|_| Error::Busy)?
-                    .discovered
-                    .get(&id)
-                    .cloned()
-                    .ok_or(Error::NotFound)
-            })
+            .map(|id| self.capture_browser.source(id)?.ok_or(Error::NotFound))
             .transpose()
     }
 }
@@ -192,26 +172,27 @@ pub(crate) async fn crawler_open_capture_browser(
     app: AppHandle,
     state: State<'_, DesktopState>,
     url: String,
+    proxy: Option<String>,
 ) -> Result<()> {
     // A shutdown in progress must not create a new desktop window.
     if state.inner.lock().map_err(|_| Error::Busy)?.closing {
         return Err(Error::Busy);
     }
     #[cfg(windows)]
-    return super::capture_browser::open(app, state.capture_browser.clone(), &url).await;
+    return super::capture_browser::open(app, state.capture_browser.clone(), &url, proxy).await;
     #[cfg(not(windows))]
     {
-        let _ = (app, state, url);
+        let _ = (app, state, url, proxy);
         Err(Error::CaptureUnavailable)
     }
 }
 
-/// Poll redacted candidates independently of the optional extension session.
+/// Poll navigation status and redacted candidates from WebView2.
 #[tauri::command]
 pub(crate) fn crawler_capture_browser_sources(
     state: State<'_, DesktopState>,
-) -> Result<Vec<Source>> {
-    state.capture_browser.sources()
+) -> Result<CaptureSnapshot> {
+    state.capture_browser.snapshot()
 }
 
 #[tauri::command]
@@ -223,48 +204,6 @@ pub(crate) async fn crawler_pick_folder(app: AppHandle) -> Result<Option<PathBuf
         .transpose()
 }
 
-/// Allow one discovery session per window and release its context when replaced.
-#[tauri::command]
-pub(crate) async fn crawler_discover(
-    state: State<'_, DesktopState>,
-    url: String,
-    proxy: Option<String>,
-) -> Result<Vec<Source>> {
-    let stop = CancellationToken::new();
-    {
-        let mut jobs = state.inner.lock().map_err(|_| Error::Busy)?;
-        if jobs.closing || jobs.discovery.is_some() {
-            return Err(Error::Busy);
-        }
-        jobs.discovery = Some(stop.clone());
-        jobs.discovered.clear();
-    }
-    let executable = browser_path();
-    let results = tokio::select! {
-        _ = stop.cancelled() => Err(Error::Cancelled),
-        results = media::discover(&executable, &url, proxy) => results,
-    };
-    let mut jobs = state.inner.lock().map_err(|_| Error::Busy)?;
-    jobs.discovery = None;
-    let mut sources = Vec::new();
-    for candidate in results? {
-        let id = Uuid::new_v4();
-        sources.push(candidate.summary(id));
-        jobs.discovered.insert(id, candidate);
-    }
-    Ok(sources)
-}
-
-#[tauri::command]
-pub(crate) fn crawler_cancel_discovery(state: State<'_, DesktopState>) -> Result<()> {
-    let mut jobs = state.inner.lock().map_err(|_| Error::Busy)?;
-    if let Some(stop) = &jobs.discovery {
-        stop.cancel();
-    }
-    jobs.discovered.clear();
-    Ok(())
-}
-
 /// Start a transfer with settings or an opaque candidate from the active capture session.
 #[tauri::command]
 pub(crate) async fn crawler_download(
@@ -272,12 +211,11 @@ pub(crate) async fn crawler_download(
     state: State<'_, DesktopState>,
     request: Download,
     source: Option<Uuid>,
-    captured: bool,
 ) -> Result<Uuid> {
     let folder = app.path().download_dir().map_err(|_| Error::File)?;
     let id = Uuid::new_v4();
     let stop = CancellationToken::new();
-    let candidate = state.resolve_source(source, captured, request.proxy.clone())?;
+    let candidate = state.resolve_source(source)?;
     {
         let mut jobs = state.inner.lock().map_err(|_| Error::Busy)?;
         if jobs.closing {
@@ -289,41 +227,102 @@ pub(crate) async fn crawler_download(
                 status: "queued",
                 progress: Progress::default(),
                 output: None,
+                duration_seconds: None,
+                file_size: None,
+                eta_seconds: None,
                 error: None,
             },
+            samples: VecDeque::new(),
             stop: stop.clone(),
         });
     }
     let jobs = state.inner.clone();
     tauri::async_runtime::spawn(async move {
-        update_transfer(&jobs, id, |summary| summary.status = "downloading");
-        let result = media::download(request, candidate, folder, stop, |progress| {
-            update_transfer(&jobs, id, |summary| summary.progress = progress);
+        update_transfer(&jobs, id, |transfer| {
+            transfer.summary.status = "downloading"
+        });
+        let result = media::download_with_size(request, candidate, folder, stop, |progress| {
+            update_transfer(&jobs, id, |transfer| transfer.record(progress));
         })
         .await;
-        update_transfer(&jobs, id, |summary| match result {
-            Ok(path) => {
-                summary.status = "completed";
-                summary.output = Some(path);
-            }
-            Err(Error::Cancelled) => summary.status = "cancelled",
-            Err(error) => {
-                summary.status = "failed";
-                summary.error = Some(error);
+        update_transfer(&jobs, id, |transfer| {
+            let summary = &mut transfer.summary;
+            summary.eta_seconds = None;
+            match result {
+                Ok((path, size)) => {
+                    summary.status = "completed";
+                    summary.output = Some(path);
+                    summary.file_size = Some(size);
+                }
+                Err(Error::Cancelled) => summary.status = "cancelled",
+                Err(error) => {
+                    summary.status = "failed";
+                    summary.error = Some(error);
+                }
             }
         });
     });
     Ok(id)
 }
 
-fn update_transfer(jobs: &Mutex<Jobs>, id: Uuid, update: impl FnOnce(&mut TransferSummary)) {
+impl Transfer {
+    // Keep a bounded recent history and use bytes when the server reports a reliable total.
+    fn record(&mut self, progress: Progress) {
+        self.summary.progress = progress;
+        self.summary.duration_seconds = progress.duration_seconds;
+        let (completed, total) = if let Some(total) = progress.total_bytes {
+            (progress.bytes, total)
+        } else if let Some(total) = progress.total_segments {
+            (u64::from(progress.segments), u64::from(total))
+        } else {
+            return;
+        };
+        let now = Instant::now();
+        if self
+            .samples
+            .back()
+            .is_none_or(|(at, _)| now.duration_since(*at) >= Duration::from_millis(500))
+        {
+            self.samples.push_back((now, completed));
+        }
+        while self.samples.len() > 1
+            && self
+                .samples
+                .front()
+                .is_some_and(|(at, _)| now.duration_since(*at) > Duration::from_secs(15))
+        {
+            self.samples.pop_front();
+        }
+        self.summary.eta_seconds = self.samples.front().and_then(|(at, initial)| {
+            let elapsed = now.duration_since(*at).as_secs_f64();
+            let advanced = completed.saturating_sub(*initial);
+            (elapsed >= 2.0 && advanced > 0 && completed < total)
+                .then(|| ((total - completed) as f64 * elapsed / advanced as f64).ceil() as u64)
+        });
+    }
+
+    // Drop stale estimates if a transfer stops reporting progress.
+    fn snapshot(&self) -> TransferSummary {
+        let mut summary = self.summary.clone();
+        if self
+            .samples
+            .back()
+            .is_some_and(|(at, _)| at.elapsed() > Duration::from_secs(15))
+        {
+            summary.eta_seconds = None;
+        }
+        summary
+    }
+}
+
+fn update_transfer(jobs: &Mutex<Jobs>, id: Uuid, update: impl FnOnce(&mut Transfer)) {
     if let Ok(mut jobs) = jobs.lock()
         && let Some(transfer) = jobs
             .transfers
             .iter_mut()
             .find(|transfer| transfer.summary.id == id)
     {
-        update(&mut transfer.summary);
+        update(transfer);
     }
 }
 
@@ -336,7 +335,7 @@ pub(crate) fn crawler_downloads(state: State<'_, DesktopState>) -> Result<Vec<Tr
         .transfers
         .iter()
         .rev()
-        .map(|entry| entry.summary.clone())
+        .map(Transfer::snapshot)
         .collect())
 }
 
@@ -352,35 +351,9 @@ pub(crate) fn crawler_cancel_download(state: State<'_, DesktopState>, id: Uuid) 
     Ok(())
 }
 
-#[tauri::command]
-pub(crate) async fn crawler_capture_start(state: State<'_, DesktopState>) -> Result<()> {
-    state.capture.start()
-}
-
-#[tauri::command]
-pub(crate) async fn crawler_capture_register() -> Result<()> {
-    blocking(super::capture::register).await
-}
-
-#[tauri::command]
-pub(crate) async fn crawler_capture_pair(state: State<'_, DesktopState>) -> Result<Pairing> {
-    state.capture.pair().await
-}
-
-#[tauri::command]
-pub(crate) fn crawler_capture_list(state: State<'_, DesktopState>) -> Result<Vec<Source>> {
-    state.capture.sources()
-}
-
-#[tauri::command]
-pub(crate) fn crawler_capture_stop(state: State<'_, DesktopState>) {
-    state.capture.stop();
-}
-
 /// Cancel desktop work before the shell destroys the window. Other CLI jobs own their leases.
 #[tauri::command]
 pub(crate) async fn crawler_shutdown(app: AppHandle, state: State<'_, DesktopState>) -> Result<()> {
-    state.capture.stop();
     {
         let mut jobs = state.inner.lock().map_err(|_| Error::Busy)?;
         jobs.closing = true;
@@ -390,10 +363,6 @@ pub(crate) async fn crawler_shutdown(app: AppHandle, state: State<'_, DesktopSta
         for transfer in &jobs.transfers {
             transfer.stop.cancel();
         }
-        if let Some(stop) = &jobs.discovery {
-            stop.cancel();
-        }
-        jobs.discovered.clear();
     }
     // Stop embedded capture before the main window closes.
     if let Some(window) = app.get_webview_window(super::capture_browser::LABEL) {
@@ -403,7 +372,6 @@ pub(crate) async fn crawler_shutdown(app: AppHandle, state: State<'_, DesktopSta
         loop {
             let idle = state.inner.lock().is_ok_and(|jobs| {
                 jobs.crawls.is_empty()
-                    && jobs.discovery.is_none()
                     && !jobs
                         .transfers
                         .iter()

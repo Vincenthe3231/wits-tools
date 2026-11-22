@@ -47,6 +47,7 @@ uuid = { version = "1", features = ["serde", "v4"] }
 axum = "0.8"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
+hickory-proto = { version = "0.25", default-features = false, features = ["std"] }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39.1"

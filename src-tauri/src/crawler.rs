@@ -10,6 +10,7 @@ pub mod storage;
 mod browser;
 pub(crate) mod capture_browser;
 mod diagnostics;
+mod dns;
 mod network;
 
 use std::path::PathBuf;
@@ -37,6 +38,7 @@ pub enum Error {
     File,
     Cancelled,
     CaptureUnavailable,
+    CaptureRouteChanged,
 }
 
 impl std::fmt::Display for Error {

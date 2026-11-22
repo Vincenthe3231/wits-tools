@@ -135,29 +135,21 @@ In Source mode, paste a clipboard image with **Ctrl+V** to insert its Markdown r
 
 Open **Crawler** in the dashboard. **Crawl** collects pages within the seed URL paths by default. Expand **Advanced settings** to allow additional domains, enter exclusions, or set a proxy. **Auto** uses the Rust HTTP crawler and launches Obscura for sparse or failed pages. **Browser** uses Obscura for page traversal and **Static** runs without a browser. Use **Choose folder** under **Download path** to save assets in a per-job subfolder at your chosen destination. Leaving it blank saves assets in WITS Tools app data. Deleting a job keeps files saved in a custom folder. Job history is stored in app data, and **Export JSON** saves the selected job and its page and asset records.
 
-In **Media Downloads**, paste a page URL and select **Detect media**. Obscura watches network requests and attempts muted playback on audio and video elements during a capture window of up to 10 seconds after navigation. This workflow runs without an extension. Choose a detected source to save it, or use **Direct media URL** for a known file, HLS playlist, or DASH manifest. The default destination is Windows Downloads. Segmented HLS output uses `.ts` and DASH saves the selected video representation as `.mp4`. Selected-tab capture remains available for pages that need your signed-in browser session or a player Obscura cannot start.
+In **Media Downloads**, enter a page URL and choose **Capture**. Play the media in the private WebView2 window, signing in there if the page requires it. Select **Download** beside a detected stream in WITS Tools. Keep the window open until the download starts. Captured streams and their request context clear when the window closes. New streams and new downloads appear at the top of their respective lists.
 
-When running `bun run tauri dev`, look for `[crawler::obscura …]` in the launching terminal. Each discovery run has an ID and elapsed timestamps. The trace includes browser startup, CDP commands, request origins, response status and media types, candidate counts, and failure categories such as timeouts, DNS, TLS, and connection errors. URL paths, query strings, credentials, and raw CDP payloads are omitted.
+Use **Direct media URL** for a known file, HLS playlist, or DASH manifest. The default destination is Windows Downloads. Segmented HLS output uses `.ts` and DASH saves the selected video representation as `.mp4`. The Downloads list shows file size, playback duration when known, and an ETA while the transfer has enough progress data.
 
-Obscura starts with its own browser session. Media downloads reuse request headers observed in that session and can pick up cookies set while the page loads. Use selected-tab capture when the page needs cookies or a sign-in from an existing browser session.
+Set **Download workers** under **Download settings** to control parallel segments or byte ranges per file. The default is 4 and the range is 1 to 16. A server without byte-range support downloads the file in a single stream.
 
-### Capture browser on Windows
+### Proxy or DNS
 
-In **Media Downloads**, enter a page URL and choose **Open in capture browser**. Play the media in the private WebView2 window and select a source under **Capture browser streams** in WITS Tools. Keep the window open until you select **Download**. The window uses its own browser session, so sign in there if the page requires it. The app keeps captured request headers in memory and clears the list when the capture window closes.
+Both Crawl and Media Downloads accept a custom HTTP, HTTPS, SOCKS5, or SOCKS5H proxy URL, or a DNS-over-HTTPS resolver. Leave the field blank for default networking. Enter a known resolver address such as Cloudflare `1.1.1.1`, Google `8.8.8.8`, Quad9 `9.9.9.9`, or AdGuard `94.140.14.14` to select that provider's encrypted endpoint. Paste the full HTTPS endpoint for NextDNS, including your profile ID. For other providers, use their `https://…/dns-query` endpoint or prefix a custom endpoint with `doh://` in place of `https://`.
+
+DNS selection is scoped to crawler requests and does not change Windows settings. The capture browser supports DNS-over-HTTPS and unauthenticated HTTP or SOCKS5 proxies. Close and reopen the capture window after changing the route.
+
+### Capture browser diagnostics
 
 In development, the launching terminal shows `[crawler::capture-browser …]` records. Match navigation start and completion by navigation ID. Failed navigation records include WebView2's error code and the HTTP status when available. The trace reports media response status and whether replay headers were present, without printing their values or full URLs.
-
-### Optional selected-tab capture
-
-The installed `crawler-extensions/` directory contains extensions for Chrome and Edge (`chromium/`) and Firefox Developer Edition and Zen (`firefox/manifest.json`). Use the browser’s unpacked or temporary extension controls to load the matching extension.
-
-1. In **Crawler > Media Downloads > Selected-tab capture**, choose **Register browser bridge** to register the host and enable capture. For later sessions, use **Enable capture**.
-2. Open **WITS Tools Capture** in the tab containing the media, start capture, and play the media.
-3. Select a detected source in WITS Tools. Use **Stop capture** to release the active session.
-
-If the native browser bridge is unavailable, choose **Generate pairing code** and paste it into the extension’s manual pairing view. The code is valid for initial pairing for five minutes.
-
-The bridge connects your browser extension to WITS Tools for selected-tab capture. Obscura runs separately for headless crawling and media detection. The Windows installers include the native host, and `bun run tauri dev` builds it automatically. For a portable release, keep `wits-tools-capture-host.exe` next to `wits-tools.exe`.
 
 ### Windows x64 browser and CLI
 

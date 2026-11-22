@@ -51,19 +51,23 @@ export interface DownloadRequest {
   format: string;
   proxy: string | null;
   overwrite: boolean;
+  workers: number;
 }
 
 export interface DownloadJob {
   id: string;
   status: "queued" | "downloading" | "completed" | "cancelled" | "failed";
   progress: { bytes: number; totalBytes: number | null; segments: number; totalSegments: number | null };
+  durationSeconds: number | null;
+  fileSize: number | null;
+  etaSeconds: number | null;
   output: string | null;
   error: { code: string } | null;
 }
 
-export interface Pairing {
-  code: string;
-  expires_in_seconds: number;
+export interface CaptureSnapshot {
+  status: "closed" | "loading" | "ready" | "failed";
+  sources: MediaSource[];
 }
 
 // Keep all native names and argument shapes out of the view components.
@@ -75,21 +79,15 @@ export const crawler = {
   remove: (id: string) => invoke<void>("crawler_delete", { id }),
   export: (id: string) => invoke<boolean>("crawler_export", { id }),
   pickFolder: () => invoke<string | null>("crawler_pick_folder"),
-  discover: (url: string, proxy: string | null) => invoke<MediaSource[]>("crawler_discover", { url, proxy }),
-  cancelDiscovery: () => invoke<void>("crawler_cancel_discovery"),
-  download: (request: DownloadRequest, source: string | null, captured: boolean) =>
-    invoke<string>("crawler_download", { request, source, captured }),
-  mediaInfo: (request: DownloadRequest, source: string | null, captured: boolean) =>
-    invoke<{ formats: { id: string; bandwidth: number }[] }>("crawler_media_info", { request, source, captured }),
+  download: (request: DownloadRequest, source: string | null) =>
+    invoke<string>("crawler_download", { request, source }),
+  mediaInfo: (request: DownloadRequest, source: string | null) =>
+    invoke<{ formats: { id: string; bandwidth: number }[] }>("crawler_media_info", { request, source }),
   downloads: () => invoke<DownloadJob[]>("crawler_downloads"),
   cancelDownload: (id: string) => invoke<void>("crawler_cancel_download", { id }),
-  startCapture: () => invoke<void>("crawler_capture_start"),
-  registerCapture: () => invoke<void>("crawler_capture_register"),
-  pairCapture: () => invoke<Pairing>("crawler_capture_pair"),
-  captured: () => invoke<MediaSource[]>("crawler_capture_list"),
-  stopCapture: () => invoke<void>("crawler_capture_stop"),
   // The embedded browser owns its own session and candidate list.
-  openCaptureBrowser: (url: string) => invoke<void>("crawler_open_capture_browser", { url }),
-  captureBrowserSources: () => invoke<MediaSource[]>("crawler_capture_browser_sources"),
+  openCaptureBrowser: (url: string, proxy: string | null) =>
+    invoke<void>("crawler_open_capture_browser", { url, proxy }),
+  captureBrowserSources: () => invoke<CaptureSnapshot>("crawler_capture_browser_sources"),
   shutdown: () => isTauri() ? invoke<void>("crawler_shutdown") : Promise.resolve(),
 };

@@ -50,6 +50,7 @@ pub(super) struct Browser {
     next_id: u64,
     responses: HashMap<String, Resource>,
     trace: Trace,
+    _dns_relay: Option<super::proxy::DnsRelay>,
 }
 
 /// Obscura publishes a structured readiness file once its authenticated listener is available.
@@ -78,6 +79,13 @@ impl Browser {
             trace.record(format_args!("executable missing"));
             return Err(Error::BrowserUnavailable);
         }
+        // Obscura accepts a forward proxy, so adapt explicit DNS selection through loopback.
+        let dns_relay = if let Some(endpoint) = proxy {
+            super::proxy::DnsRelay::start(endpoint).await?
+        } else {
+            None
+        };
+        let proxy = dns_relay.as_ref().map(|relay| &relay.url).or(proxy);
         let runtime = tempfile::tempdir().map_err(|_| Error::File)?;
         let ready = runtime.path().join("ready");
         let token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
@@ -194,6 +202,7 @@ impl Browser {
             next_id: 0,
             responses: HashMap::new(),
             trace,
+            _dns_relay: dns_relay,
         })
     }
 

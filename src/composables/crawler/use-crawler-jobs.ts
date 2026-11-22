@@ -3,22 +3,18 @@ import { isTauri } from "@tauri-apps/api/core";
 import { onActivated, onDeactivated, onScopeDispose, ref, shallowRef } from "vue";
 
 import { crawler } from "../../api/crawler";
-import type { CrawlJob, CrawlResults, DownloadJob, MediaSource } from "../../api/crawler";
+import type { CaptureSnapshot, CrawlJob, CrawlResults, DownloadJob } from "../../api/crawler";
 import { crawlerError } from "../../const/crawler/errors";
 import { notify } from "../use-notifications";
 
 export function useCrawlerJobs() {
   const jobs = shallowRef<CrawlJob[]>([]);
   const downloads = shallowRef<DownloadJob[]>([]);
-  const captured = shallowRef<MediaSource[]>([]);
-  // Embedded capture can remain open while the user visits other workspace views.
-  const browserSources = shallowRef<MediaSource[]>([]);
+  const browserCapture = shallowRef<CaptureSnapshot>({ status: "closed", sources: [] });
   const results = shallowRef<CrawlResults>();
   const selected = ref<string>();
   const pageOffset = ref(0);
   const assetOffset = ref(0);
-  const captureActive = ref(false);
-  const proxy = ref("");
   const refreshError = ref("");
   const native = isTauri();
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -39,8 +35,8 @@ export function useCrawlerJobs() {
     if (!native) return Promise.resolve();
     if (currentRefresh) return currentRefresh;
     currentRefresh = (async () => {
-      const [nextJobs, nextDownloads, nextCaptured, nextBrowserSources] = await Promise.all([
-        crawler.jobs(), crawler.downloads(), captureActive.value ? crawler.captured() : Promise.resolve([]),
+      const [nextJobs, nextDownloads, nextCapture] = await Promise.all([
+        crawler.jobs(), crawler.downloads(),
         crawler.captureBrowserSources(),
       ]);
       for (const job of nextJobs) {
@@ -63,8 +59,7 @@ export function useCrawlerJobs() {
       }
       jobs.value = nextJobs;
       downloads.value = nextDownloads;
-      browserSources.value = nextBrowserSources;
-      if (captureActive.value) captured.value = nextCaptured;
+      browserCapture.value = nextCapture;
       if (selected.value && !nextJobs.some((job) => job.id === selected.value)) await selectJob(undefined);
       await refreshResults();
       refreshError.value = "";
@@ -94,6 +89,6 @@ export function useCrawlerJobs() {
   onDeactivated(stopPolling);
   onScopeDispose(stopPolling);
 
-  return { native, jobs, downloads, captured, browserSources, results, selected, pageOffset, assetOffset,
-    captureActive, proxy, refreshError, refresh, refreshResults, selectJob };
+  return { native, jobs, downloads, browserCapture, results, selected, pageOffset, assetOffset,
+    refreshError, refresh, refreshResults, selectJob };
 }

@@ -14,6 +14,10 @@ pub(super) fn proxy(value: Option<&str>) -> Result<Option<Url>> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| {
+            // A DNS resolver is an alternative route configuration, never a forward proxy URL.
+            if let Some(resolver) = super::dns::endpoint(value) {
+                return resolver;
+            }
             let url = Url::parse(value).map_err(|_| Error::InvalidProxy)?;
             if !matches!(url.scheme(), "http" | "https" | "socks5" | "socks5h")
                 || url.host().is_none()
@@ -41,8 +45,13 @@ pub(super) fn client(proxy: Option<&Url>, follow_redirects: bool) -> Result<Clie
             reqwest::redirect::Policy::none()
         });
     if let Some(proxy) = proxy {
-        builder =
-            builder.proxy(reqwest::Proxy::all(proxy.as_str()).map_err(|_| Error::InvalidProxy)?);
+        builder = if proxy.scheme() == "doh" {
+            builder
+                .no_proxy()
+                .dns_resolver(super::dns::Doh::new(proxy.clone())?)
+        } else {
+            builder.proxy(reqwest::Proxy::all(proxy.as_str()).map_err(|_| Error::InvalidProxy)?)
+        };
     }
     builder.build().map_err(|_| Error::Network)
 }

@@ -118,6 +118,8 @@ impl Config {
         config.proxy_url = network::proxy(self.proxy_url.as_deref())
             .ok()
             .flatten()
+            // A DoH path can contain a private provider profile identifier.
+            .filter(|proxy| proxy.scheme() != "doh")
             .map(|mut proxy| {
                 let _ = proxy.set_password(None);
                 let _ = proxy.set_username("");
@@ -253,9 +255,16 @@ async fn run_queue<P: Middleware<BasicContext>>(
 where
     P::Out: CrawlingContext,
 {
-    let proxy = runner
-        .proxy
-        .clone()
+    // Crawlee accepts forward proxies only. Its own requests need the same DNS route.
+    let dns_relay = if let Some(endpoint) = &runner.proxy {
+        super::proxy::DnsRelay::start(endpoint).await?
+    } else {
+        None
+    };
+    let proxy = dns_relay
+        .as_ref()
+        .map(|relay| &relay.url)
+        .or(runner.proxy.as_ref())
         .map(|url| {
             ProxyConfiguration::new([url.as_str()])
                 .map(|config| Arc::new(config) as Arc<dyn ProxySource>)

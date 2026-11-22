@@ -5,6 +5,7 @@ import { notify } from "./composables/use-notifications";
 import App from "./App.vue";
 import { router } from "./routes";
 import "./styles/app.css";
+import "./styles/form-grid.css";
 // Load the shared presets once so all tools can use the same interaction timing.
 import "./styles/navigation-motion.css";
 

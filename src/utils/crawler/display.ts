@@ -26,3 +26,13 @@ export function downloadPercent({ progress }: DownloadJob) {
   if (progress.totalSegments) return Math.min(100, 100 * progress.segments / progress.totalSegments);
   return undefined;
 }
+
+// Share the same clock format for playback duration and time remaining.
+export function mediaTime(seconds: number) {
+  const whole = Math.ceil(seconds);
+  const minutes = Math.floor(whole / 60);
+  const remainder = String(whole % 60).padStart(2, "0");
+  return minutes < 60
+    ? minutes + ":" + remainder
+    : Math.floor(minutes / 60) + ":" + String(minutes % 60).padStart(2, "0") + ":" + remainder;
+}

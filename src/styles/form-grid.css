@@ -1,0 +1,29 @@
+/* Shared form rows wrap to fit their container and never exceed three columns. */
+.form-grid {
+  --form-grid-gap: 0.75rem;
+  --form-grid-cell: 10rem;
+  display: grid;
+  align-items: start;
+  gap: var(--form-grid-gap);
+  grid-template-columns: repeat(auto-fit, minmax(
+    max(min(100%, var(--form-grid-cell)), calc((100% - 2 * var(--form-grid-gap)) / 3)),
+    1fr
+  ));
+}
+
+/* Slider rows use the same spacing and wrap to one column when space is tight. */
+.form-grid-sliders {
+  grid-template-columns: repeat(auto-fit, minmax(
+    max(min(100%, var(--form-grid-cell)), calc((100% - var(--form-grid-gap)) / 2)),
+    1fr
+  ));
+}
+
+/* Let controls shrink within a track without widening neighboring fields. */
+.form-grid > * {
+  min-width: 0;
+}
+
+.form-grid-full {
+  grid-column: 1 / -1;
+}
