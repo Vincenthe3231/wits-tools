@@ -3,8 +3,14 @@
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
 import { computed, nextTick, reactive, ref, shallowRef } from "vue";
 
+import Badge from "../../components/ui/Badge.vue";
+import Card from "../../components/ui/Card.vue";
+import CardHeader from "../../components/ui/CardHeader.vue";
+import ToolFieldCard from "../../components/ui/ToolFieldCard.vue";
+import CardContent from "../../components/ui/CardContent.vue";
 import AppSelect from "../../components/AppSelect.vue";
 import { ApiFailure, sendApiRequest, type ApiResponse } from "../../api/api-tester";
+import { useActiveToolCard } from "../../composables/use-active-tool-card";
 import { notify } from "../../composables/use-notifications";
 import { apiErrors } from "../../const/api-tester/errors";
 import {
@@ -25,6 +31,9 @@ const draft = reactive<RequestDraft>({
   expectedStatus: "",
   maxTime: "",
 });
+// Scope decorative card activation to this cached tool.
+const workspace = ref<HTMLElement>();
+useActiveToolCard(workspace);
 const form = ref<HTMLFormElement>();
 const requestTab = ref("headers");
 const responseTab = ref("body");
@@ -177,287 +186,343 @@ async function send() {
 </script>
 
 <template>
-  <main class="api-tester">
+  <main ref="workspace" class="api-tester tool-workspace">
     <!-- Keep the endpoint and Send visible above the optional request details. -->
     <form ref="form" class="api-section" aria-labelledby="api-request-title" @submit.prevent="send">
-      <h1 id="api-request-title">Request</h1>
-      <div class="request-bar">
-        <div class="field">
-          <label for="api-method">Method</label>
-          <AppSelect
-            id="api-method"
-            v-model="draft.method"
-            :options="methods.map((method) => ({ value: method, label: method }))"
-            v-bind="fieldState('api-method')"
-            @update:model-value="delete errors['api-method']"
-          />
-          <p v-if="errors['api-method']" id="api-method-error" class="text-status-error-text">
-            {{ errors["api-method"] }}
-          </p>
-        </div>
-        <div class="field">
-          <label for="api-url">URL</label>
-          <input
-            id="api-url"
-            v-model="draft.url"
-            class="code"
-            inputmode="url"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="http://localhost:3000/health"
-            v-bind="fieldState('api-url')"
-            @input="delete errors['api-url']"
-          />
-          <p v-if="errors['api-url']" id="api-url-error" class="text-status-error-text">
-            {{ errors["api-url"] }}
-          </p>
-        </div>
-        <button type="submit" class="primary-button" :disabled="sending">
-          {{ sending ? "Sending…" : "Send" }}
-        </button>
-      </div>
+      <Card>
+        <CardHeader>
+          <h1 id="api-request-title">Request</h1>
+          <p class="tool-card-description">Set up an HTTP request and optional response checks.</p>
+        </CardHeader>
+        <CardContent>
+          <ToolFieldCard
+            title="Endpoint"
+            description="Choose the method and address to send the request to."
+          >
+            <div class="request-bar">
+              <div class="field">
+                <label for="api-method">Method</label>
+                <AppSelect
+                  id="api-method"
+                  v-model="draft.method"
+                  :options="methods.map((method) => ({ value: method, label: method }))"
+                  v-bind="fieldState('api-method')"
+                  @update:model-value="delete errors['api-method']"
+                />
+                <p v-if="errors['api-method']" id="api-method-error" class="text-status-error-text">
+                  {{ errors["api-method"] }}
+                </p>
+              </div>
+              <div class="field">
+                <label for="api-url">URL</label>
+                <input
+                  id="api-url"
+                  v-model="draft.url"
+                  class="code"
+                  inputmode="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="http://localhost:3000/health"
+                  v-bind="fieldState('api-url')"
+                  @input="delete errors['api-url']"
+                />
+                <p v-if="errors['api-url']" id="api-url-error" class="text-status-error-text">
+                  {{ errors["api-url"] }}
+                </p>
+              </div>
+              <button type="submit" class="primary-button" :disabled="sending">
+                {{ sending ? "Sending…" : "Send" }}
+              </button>
+            </div>
+          </ToolFieldCard>
 
-      <!-- Use the installed tabs to keep headers, raw body, and optional checks easy to reach. -->
-      <TabsRoot v-model="requestTab">
-        <TabsList class="tabs" aria-label="Request options">
-          <TabsTrigger value="headers" type="button">Headers</TabsTrigger>
-          <TabsTrigger value="body" type="button">Body</TabsTrigger>
-          <TabsTrigger value="checks" type="button">Checks</TabsTrigger>
-        </TabsList>
-        <TabsContent value="headers" class="tab-panel">
-          <div v-for="(row, index) in draft.headers" :key="row.id" class="header-row">
-            <label class="header-inclusion">
-              <input
-                v-model="row.enabled"
-                type="checkbox"
-                :aria-label="'Include header ' + (row.name.trim() || (index + 1))"
-                @change="delete errors[headerFieldId(row.id, 'name')]; delete errors[headerFieldId(row.id, 'value')]"
-              />
-              <span>Send</span>
-            </label>
-            <div class="field">
-              <label :for="headerFieldId(row.id, 'name')">Name</label>
-              <input
-                :id="headerFieldId(row.id, 'name')"
-                v-model="row.name"
-                class="code"
-                autocomplete="off"
-                spellcheck="false"
-                v-bind="fieldState(headerFieldId(row.id, 'name'))"
-                @input="delete errors[headerFieldId(row.id, 'name')]"
-              />
-              <p
-                v-if="errors[headerFieldId(row.id, 'name')]"
-                :id="headerFieldId(row.id, 'name') + '-error'"
-                class="text-status-error-text"
+          <!-- Use the installed tabs to keep headers, raw body, and optional checks easy to reach. -->
+          <TabsRoot v-model="requestTab">
+            <TabsList class="tabs" aria-label="Request options">
+              <TabsTrigger value="headers" type="button">Headers</TabsTrigger>
+              <TabsTrigger value="body" type="button">Body</TabsTrigger>
+              <TabsTrigger value="checks" type="button">Checks</TabsTrigger>
+            </TabsList>
+            <TabsContent value="headers" class="tab-panel">
+              <ToolFieldCard
+                v-for="(row, index) in draft.headers"
+                :key="row.id"
+                :title="'Header ' + (index + 1)"
+                description="Specify a name and value to send with the request."
               >
-                {{ errors[headerFieldId(row.id, "name")] }}
-              </p>
-            </div>
-            <div class="field">
-              <label :for="headerFieldId(row.id, 'value')">Value</label>
-              <input
-                :id="headerFieldId(row.id, 'value')"
-                v-model="row.value"
-                class="code"
-                autocomplete="off"
-                spellcheck="false"
-                v-bind="fieldState(headerFieldId(row.id, 'value'))"
-                @input="delete errors[headerFieldId(row.id, 'value')]"
-              />
-              <p
-                v-if="errors[headerFieldId(row.id, 'value')]"
-                :id="headerFieldId(row.id, 'value') + '-error'"
-                class="text-status-error-text"
+                <div class="header-row">
+                  <label class="header-inclusion">
+                    <input
+                      v-model="row.enabled"
+                      type="checkbox"
+                      :aria-label="'Include header ' + (row.name.trim() || (index + 1))"
+                      @change="delete errors[headerFieldId(row.id, 'name')]; delete errors[headerFieldId(row.id, 'value')]"
+                    />
+                    <span>Send</span>
+                  </label>
+                  <div class="field">
+                    <label :for="headerFieldId(row.id, 'name')">Name</label>
+                    <input
+                      :id="headerFieldId(row.id, 'name')"
+                      v-model="row.name"
+                      class="code"
+                      autocomplete="off"
+                      spellcheck="false"
+                      v-bind="fieldState(headerFieldId(row.id, 'name'))"
+                      @input="delete errors[headerFieldId(row.id, 'name')]"
+                    />
+                    <p
+                      v-if="errors[headerFieldId(row.id, 'name')]"
+                      :id="headerFieldId(row.id, 'name') + '-error'"
+                      class="text-status-error-text"
+                    >
+                      {{ errors[headerFieldId(row.id, "name")] }}
+                    </p>
+                  </div>
+                  <div class="field">
+                    <label :for="headerFieldId(row.id, 'value')">Value</label>
+                    <input
+                      :id="headerFieldId(row.id, 'value')"
+                      v-model="row.value"
+                      class="code"
+                      autocomplete="off"
+                      spellcheck="false"
+                      v-bind="fieldState(headerFieldId(row.id, 'value'))"
+                      @input="delete errors[headerFieldId(row.id, 'value')]"
+                    />
+                    <p
+                      v-if="errors[headerFieldId(row.id, 'value')]"
+                      :id="headerFieldId(row.id, 'value') + '-error'"
+                      class="text-status-error-text"
+                    >
+                      {{ errors[headerFieldId(row.id, "value")] }}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    :aria-label="'Remove header ' + (index + 1)"
+                    @click="removeHeader(index)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </ToolFieldCard>
+              <button type="button" class="secondary-action" @click="addHeader">Add header</button>
+              <p class="muted">Only checked headers with a value are sent.</p>
+            </TabsContent>
+            <TabsContent value="body" class="tab-panel">
+              <ToolFieldCard
+                title="Raw request body"
+                description="For JSON, set Content-Type to application/json in Headers."
+                label-for="api-body"
               >
-                {{ errors[headerFieldId(row.id, "value")] }}
-              </p>
-            </div>
-            <button
-              type="button"
-              :aria-label="'Remove header ' + (index + 1)"
-              @click="removeHeader(index)"
-            >
-              Remove
-            </button>
-          </div>
-          <button type="button" class="secondary-action" @click="addHeader">Add header</button>
-          <p class="muted">Only checked headers with a value are sent.</p>
-        </TabsContent>
-        <TabsContent value="body" class="tab-panel">
-          <div class="field">
-            <label for="api-body">Raw request body</label>
-            <textarea
-              id="api-body"
-              v-model="draft.body"
-              class="body-textarea code"
-              rows="6"
-              spellcheck="false"
-              @blur="formatRequestBody"
-            />
-            <p class="muted">Paste the payload here. For JSON, set Content-Type to application/json in Headers.</p>
-          </div>
-        </TabsContent>
-        <TabsContent value="checks" class="tab-panel">
-          <div class="check-fields">
-            <div class="field">
-              <label for="api-expected-status">Status equals</label>
-              <input
-                id="api-expected-status"
-                v-model="draft.expectedStatus"
-                inputmode="numeric"
-                placeholder="200"
-                v-bind="fieldState('api-expected-status')"
-                @input="delete errors['api-expected-status']"
-              />
-              <p
-                v-if="errors['api-expected-status']"
-                id="api-expected-status-error"
-                class="text-status-error-text"
+                <div class="field">
+                  <textarea
+                    id="api-body"
+                    v-model="draft.body"
+                    class="body-textarea code"
+                    rows="6"
+                    spellcheck="false"
+                    @blur="formatRequestBody"
+                  />
+                </div>
+              </ToolFieldCard>
+            </TabsContent>
+            <TabsContent value="checks" class="tab-panel">
+              <ToolFieldCard
+                title="Status equals"
+                description="Enter the HTTP status the response should return."
+                label-for="api-expected-status"
               >
-                {{ errors["api-expected-status"] }}
-              </p>
-            </div>
-            <div class="field">
-              <label for="api-max-time">Time to headers is at most (ms)</label>
-              <input
-                id="api-max-time"
-                v-model="draft.maxTime"
-                inputmode="numeric"
-                placeholder="500"
-                v-bind="fieldState('api-max-time')"
-                @input="delete errors['api-max-time']"
-              />
-              <p v-if="errors['api-max-time']" id="api-max-time-error" class="text-status-error-text">
-                {{ errors["api-max-time"] }}
-              </p>
-            </div>
-          </div>
-          <p class="muted">Leave a field blank to skip its check.</p>
-        </TabsContent>
-      </TabsRoot>
+                <div class="field">
+                  <input
+                    id="api-expected-status"
+                    v-model="draft.expectedStatus"
+                    inputmode="numeric"
+                    placeholder="200"
+                    v-bind="fieldState('api-expected-status')"
+                    @input="delete errors['api-expected-status']"
+                  />
+                  <p
+                    v-if="errors['api-expected-status']"
+                    id="api-expected-status-error"
+                    class="text-status-error-text"
+                  >
+                    {{ errors["api-expected-status"] }}
+                  </p>
+                </div>
+              </ToolFieldCard>
+              <ToolFieldCard
+                title="Time to headers is at most (ms)"
+                description="Set the maximum time to wait for response headers."
+                label-for="api-max-time"
+              >
+                <div class="field">
+                  <input
+                    id="api-max-time"
+                    v-model="draft.maxTime"
+                    inputmode="numeric"
+                    placeholder="500"
+                    v-bind="fieldState('api-max-time')"
+                    @input="delete errors['api-max-time']"
+                  />
+                  <p v-if="errors['api-max-time']" id="api-max-time-error" class="text-status-error-text">
+                    {{ errors["api-max-time"] }}
+                  </p>
+                </div>
+              </ToolFieldCard>
+              <p class="muted">Leave a field blank to skip its check.</p>
+            </TabsContent>
+          </TabsRoot>
+        </CardContent>
+      </Card>
     </form>
 
     <!-- Expose the lifecycle once to assistive technology and keep transport errors visible. -->
-    <section class="api-section" aria-labelledby="api-response-title">
-      <h2 id="api-response-title">Response</h2>
-      <p v-if="sending" role="status" class="muted">Waiting for the response…</p>
-      <p v-else-if="failure" class="text-status-error-text">{{ failure }}</p>
-      <p v-else-if="!result" class="muted">Send a request to see its response here.</p>
-      <template v-else>
-        <p class="response-summary" role="status">
-          <strong>HTTP {{ result.response.status }}</strong>
-          <span>{{ result.response.timeToHeadersMs }} ms to headers</span>
-        </p>
-        <p class="response-target code muted">{{ result.method }} {{ result.url }}</p>
-        <TabsRoot v-model="responseTab">
-          <TabsList class="tabs" aria-label="Response details">
-            <TabsTrigger value="body" type="button">Body</TabsTrigger>
-            <TabsTrigger value="headers" type="button">Headers</TabsTrigger>
-            <TabsTrigger v-if="result.checks.length" value="checks" type="button">
-              Check results ({{ result.checks.filter((check) => check.passed).length }}/{{ result.checks.length }})
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="body" class="tab-panel">
-            <!-- Offer an indented text view and an expandable table for complete JSON. -->
-            <div v-if="result.response.body.kind === 'text'" class="response-body-actions">
-              <div role="group" aria-label="Response body view">
-                <button type="button" :aria-pressed="bodyView === 'raw'" @click="bodyView = 'raw'">Raw</button>
-                <button type="button" :aria-pressed="bodyView === 'table'" @click="bodyView = 'table'">Table</button>
-              </div>
-              <button
-                type="button"
-                class="secondary-action"
-                @click="copyResponse(bodyText, result.response.body.truncated ? 'Body preview' : 'Body')"
+    <Card as="section" aria-labelledby="api-response-title">
+      <CardHeader>
+        <h2 id="api-response-title">Response</h2>
+        <p class="tool-card-description">Inspect the payload, headers, and check outcomes.</p>
+      </CardHeader>
+      <CardContent>
+        <p v-if="sending" role="status" class="muted">Waiting for the response…</p>
+        <p v-else-if="failure" class="text-status-error-text">{{ failure }}</p>
+        <p v-else-if="!result" class="muted">Send a request to see its response here.</p>
+        <template v-else>
+          <ToolFieldCard
+            title="Overview"
+            description="Status, request address, and time to headers."
+          >
+            <p class="response-summary" role="status">
+              <Badge>HTTP {{ result.response.status }}</Badge>
+              <span>{{ result.response.timeToHeadersMs }} ms to headers</span>
+            </p>
+            <p class="response-target code muted">{{ result.method }} {{ result.url }}</p>
+          </ToolFieldCard>
+          <TabsRoot v-model="responseTab">
+            <TabsList class="tabs" aria-label="Response details">
+              <TabsTrigger value="body" type="button">Body</TabsTrigger>
+              <TabsTrigger value="headers" type="button">Headers</TabsTrigger>
+              <TabsTrigger v-if="result.checks.length" value="checks" type="button">
+                Check results ({{ result.checks.filter((check) => check.passed).length }}/{{ result.checks.length }})
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="body" class="tab-panel">
+              <ToolFieldCard
+                title="Payload"
+                description="Read the response as text or inspect its structure."
               >
-                {{ result.response.body.truncated ? "Copy preview" : "Copy body" }}
-              </button>
-            </div>
-            <p v-if="result.response.body.truncated" class="text-status-warning-text">
-              The response body exceeds the 1 MiB preview limit.
-            </p>
-            <textarea
-              v-if="result.response.body.kind === 'text' && bodyView === 'raw'"
-              class="body-textarea response-body code"
-              aria-label="Response body text"
-              :value="bodyText"
-              rows="6"
-              readonly
-              spellcheck="false"
-            />
-            <table v-else-if="result.response.body.kind === 'text' && responseJson" class="response-headers">
-              <thead>
-                <tr>
-                  <th scope="col">Key or index</th>
-                  <th scope="col">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in tableRows" :key="row.id" class="code">
-                  <th scope="row">
-                    <div :style="{ paddingInlineStart: 'min(50%, ' + row.depth * 0.75 + 'rem)' }">
-                      <button
-                        v-if="row.expandable"
-                        type="button"
-                        class="response-branch"
-                        :aria-expanded="expandedRows.has(row.id)"
-                        @click="toggleRow(row.id)"
-                      >
-                        <span aria-hidden="true">{{ expandedRows.has(row.id) ? "▾" : "▸" }}</span>
-                        {{ row.name || '""' }}
-                      </button>
-                      <span v-else>{{ row.name || '""' }}</span>
-                    </div>
-                  </th>
-                  <td>{{ row.value }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <p v-else-if="result.response.body.kind === 'text'" class="muted">
-              Table view requires a complete JSON response. Use Raw to inspect this body.
-            </p>
-            <p v-else-if="result.response.body.kind === 'empty'" class="muted">The response body is empty.</p>
-            <p v-else class="muted">The body format cannot be displayed as UTF-8 text.</p>
-          </TabsContent>
-          <TabsContent value="headers" class="tab-panel">
-            <p v-if="!result.response.headers.length" class="muted">No response headers.</p>
-            <button
-              v-if="result.response.headers.length"
-              type="button"
-              class="secondary-action"
-              @click="copyResponse(result.response.headers.map(([name, value]) => name + ': ' + value).join('\n'), 'Headers')"
-            >
-              Copy headers
-            </button>
-            <table v-if="result.response.headers.length" class="response-headers">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="([name, value], index) in result.response.headers" :key="index" class="code">
-                  <th scope="row">{{ name }}</th>
-                  <td>{{ value }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </TabsContent>
-          <TabsContent v-if="result.checks.length" value="checks" class="tab-panel">
-            <ul class="check-results">
-              <li v-for="check in result.checks" :key="check.label">
-                <strong :class="check.passed ? 'text-status-success-text' : 'text-status-error-text'">
-                  {{ check.passed ? "Pass" : "Fail" }}
-                </strong>
-                {{ check.label }} {{ check.expected }}
-                <span class="muted">(actual {{ check.actual }})</span>
-              </li>
-            </ul>
-          </TabsContent>
-        </TabsRoot>
-      </template>
-    </section>
+                <!-- Offer an indented text view and an expandable table for complete JSON. -->
+                <div v-if="result.response.body.kind === 'text'" class="response-body-actions">
+                  <div role="group" aria-label="Response body view">
+                    <button type="button" :aria-pressed="bodyView === 'raw'" @click="bodyView = 'raw'">Raw</button>
+                    <button type="button" :aria-pressed="bodyView === 'table'" @click="bodyView = 'table'">Table</button>
+                  </div>
+                  <button
+                    type="button"
+                    class="secondary-action"
+                    @click="copyResponse(bodyText, result.response.body.truncated ? 'Body preview' : 'Body')"
+                  >
+                    {{ result.response.body.truncated ? "Copy preview" : "Copy body" }}
+                  </button>
+                </div>
+                <p v-if="result.response.body.truncated" class="text-status-warning-text">
+                  The response body exceeds the 1 MiB preview limit.
+                </p>
+                <textarea
+                  v-if="result.response.body.kind === 'text' && bodyView === 'raw'"
+                  class="body-textarea response-body code"
+                  aria-label="Response body text"
+                  :value="bodyText"
+                  rows="6"
+                  readonly
+                  spellcheck="false"
+                />
+                <table v-else-if="result.response.body.kind === 'text' && responseJson" class="response-headers">
+                  <thead>
+                    <tr>
+                      <th scope="col">Key or index</th>
+                      <th scope="col">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in tableRows" :key="row.id" class="code">
+                      <th scope="row">
+                        <div :style="{ paddingInlineStart: 'min(50%, ' + row.depth * 0.75 + 'rem)' }">
+                          <button
+                            v-if="row.expandable"
+                            type="button"
+                            class="response-branch"
+                            :aria-expanded="expandedRows.has(row.id)"
+                            @click="toggleRow(row.id)"
+                          >
+                            <span aria-hidden="true">{{ expandedRows.has(row.id) ? "▾" : "▸" }}</span>
+                            {{ row.name || '""' }}
+                          </button>
+                          <span v-else>{{ row.name || '""' }}</span>
+                        </div>
+                      </th>
+                      <td>{{ row.value }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-else-if="result.response.body.kind === 'text'" class="muted">
+                  Table view requires a complete JSON response. Use Raw to inspect this body.
+                </p>
+                <p v-else-if="result.response.body.kind === 'empty'" class="muted">The response body is empty.</p>
+                <p v-else class="muted">The body format cannot be displayed as UTF-8 text.</p>
+              </ToolFieldCard>
+            </TabsContent>
+            <TabsContent value="headers" class="tab-panel">
+              <ToolFieldCard
+                title="Headers"
+                description="Inspect or copy the response headers."
+              >
+                <p v-if="!result.response.headers.length" class="muted">No response headers.</p>
+                <button
+                  v-if="result.response.headers.length"
+                  type="button"
+                  class="secondary-action"
+                  @click="copyResponse(result.response.headers.map(([name, value]) => name + ': ' + value).join('\n'), 'Headers')"
+                >
+                  Copy headers
+                </button>
+                <table v-if="result.response.headers.length" class="response-headers">
+                  <thead>
+                    <tr>
+                      <th scope="col">Name</th>
+                      <th scope="col">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="([name, value], index) in result.response.headers" :key="index" class="code">
+                      <th scope="row">{{ name }}</th>
+                      <td>{{ value }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </ToolFieldCard>
+            </TabsContent>
+            <TabsContent v-if="result.checks.length" value="checks" class="tab-panel">
+              <ToolFieldCard
+                title="Check outcomes"
+                description="Compare the response with your request checks."
+              >
+                <ul class="check-results">
+                  <li v-for="check in result.checks" :key="check.label">
+                    <Badge :variant="check.passed ? 'success' : 'error'">
+                      {{ check.passed ? "Pass" : "Fail" }}
+                    </Badge>
+                    {{ check.label }} {{ check.expected }}
+                    <span class="muted">(actual {{ check.actual }})</span>
+                  </li>
+                </ul>
+              </ToolFieldCard>
+            </TabsContent>
+          </TabsRoot>
+        </template>
+      </CardContent>
+    </Card>
   </main>
 </template>
 
@@ -472,13 +537,7 @@ async function send() {
 }
 
 .api-section {
-  display: grid;
   min-width: 0;
-  gap: 0.75rem;
-  padding: clamp(0.75rem, 2vw, 1.25rem);
-  border: 1px solid var(--workspace-edge);
-  border-radius: 0.65rem;
-  background: var(--surface-editor);
 }
 
 h1, h2 {
@@ -487,7 +546,7 @@ h1, h2 {
 }
 
 /* Let the endpoint and header value fields shrink while preserving intrinsic button sizes. */
-.request-bar, .header-row, .check-fields {
+.request-bar, .header-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
@@ -512,10 +571,6 @@ h1, h2 {
   width: 1rem;
   min-height: 1rem;
   accent-color: var(--accent-strong);
-}
-
-.check-fields {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
 }
 
 .field {
@@ -651,8 +706,15 @@ input, select, textarea {
   font: inherit;
 }
 
-.check-results strong {
-  display: inline-block;
-  min-width: 2.75rem;
+/* Stack related field controls when the workspace itself narrows. */
+@container tool-controls (width < 24rem) {
+  .request-bar, .header-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .header-inclusion, .request-bar > button, .header-row > button {
+    margin-top: 0;
+    justify-self: start;
+  }
 }
 </style>

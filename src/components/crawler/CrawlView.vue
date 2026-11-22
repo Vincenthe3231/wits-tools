@@ -1,6 +1,11 @@
 <!-- Starts crawl jobs and provides separate, paginated views of pages and assets. -->
 <script setup lang="ts">
 import { ref } from "vue";
+import Badge from "../ui/Badge.vue";
+import Card from "../ui/Card.vue";
+import CardHeader from "../ui/CardHeader.vue";
+import ToolFieldCard from "../ui/ToolFieldCard.vue";
+import CardContent from "../ui/CardContent.vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import AppSelect from "../AppSelect.vue";
@@ -105,195 +110,241 @@ function paginate(kind: "pages" | "assets", step: number) {
 
 <template>
   <!-- Put the requested URLs and primary action first, with advanced options one step away. -->
-  <form class="crawler-panel crawler-stack" @submit.prevent="start">
-    <div class="crawler-heading">
-      <h1>New crawl</h1>
-      <button class="primary-button" type="submit" :disabled="!concurrencyValid || !delayValid || !native || !seedUrls.trim() || starting || busy">
-        {{ starting ? "Starting…" : "Crawl" }}
-      </button>
-    </div>
-    <label class="crawler-field">
-      <span>Start URLs</span>
-      <textarea v-model="seedUrls" rows="2" required placeholder="https://example.com" />
-      <small>Enter one URL per line.</small>
-    </label>
-    <div class="form-grid">
-      <div class="crawler-field">
-        <label for="crawl-mode">Mode</label>
-        <AppSelect
-          id="crawl-mode"
-          v-model="mode"
-          :options="[
-            { value: 'auto', label: 'Auto' },
-            { value: 'always', label: 'Browser' },
-            { value: 'never', label: 'Static' },
-          ]"
-        />
-      </div>
-      <label class="crawler-field">
-        <span>Max pages</span>
-        <input v-model.number="maxPages" type="number" min="1" max="4294967295" required />
-      </label>
-      <label class="crawler-field">
-        <span>Max depth</span>
-        <input v-model.number="maxDepth" type="number" min="0" max="4294967295" required />
-      </label>
-    </div>
-    <!-- Keep the asset location visible alongside the basic crawl settings. -->
-    <div class="form-grid">
-      <div class="crawler-field form-grid-full">
-        <label for="crawl-download-path">Download path</label>
-        <div class="crawler-inline-control">
-          <input
-            id="crawl-download-path"
-            v-model="assetFolder"
-            placeholder="WITS Tools app data"
-            :disabled="!assets || starting || busy"
-          />
-          <button
-            class="crawler-folder-button"
-            type="button"
-            :disabled="!native || !assets || starting || busy"
-            @click="action('Could not open folder picker', chooseFolder)"
-          >
-            Choose folder
-          </button>
+  <form @submit.prevent="start">
+    <Card>
+      <CardHeader class="crawler-heading">
+        <div>
+          <h1>New crawl</h1>
+          <p class="tool-card-description">Choose where the crawl starts and which pages it can visit.</p>
         </div>
-      </div>
-    </div>
-    <details class="crawler-stack">
-      <summary>Advanced settings</summary>
-      <div class="form-grid crawler-advanced">
-        <div class="form-grid form-grid-full form-grid-sliders">
-          <!-- Keep precise entry available alongside both crawl sliders. -->
-          <AppSlider
-            id="crawl-concurrency"
-            v-model="concurrency"
-            v-model:valid="concurrencyValid"
-            class="crawler-field"
-            label="Concurrency"
-            :min="1"
-            :max="20"
-          />
-          <AppSlider
-            id="crawl-delay"
-            v-model="delay"
-            v-model:valid="delayValid"
-            class="crawler-field"
-            label="Request delay (ms)"
-            :min="0"
-            :max="5000"
-            unit="ms"
-            allow-above-max
-          />
-        </div>
-        <!-- Use the supported public DNS shortcuts and keep credential-bearing URLs masked. -->
-        <AppInputSelect
-          id="crawl-proxy"
-          v-model="proxy"
-          class="crawler-field"
-          label="Proxy or DNS"
-          type="password"
-          autocomplete="off"
-          placeholder="Proxy URL or DNS endpoint"
-          help="Choose a public resolver or enter a custom proxy or DNS endpoint."
-          :options="DNS_PRESETS"
-        />
-        <label class="crawler-field">
-          <span>Allowed domains</span>
-          <textarea v-model="domains" rows="2" placeholder="One domain per line" />
-        </label>
-        <label class="crawler-field">
-          <span>Exclude patterns</span>
-          <textarea v-model="exclusions" rows="2" placeholder="One regular expression per line" />
-        </label>
-      </div>
-      <div class="crawler-actions">
-        <label><input v-model="respectRobots" type="checkbox" /> Respect robots.txt</label>
-        <label><input v-model="assets" type="checkbox" /> Download assets</label>
-      </div>
-    </details>
+        <button class="primary-button" type="submit" :disabled="!concurrencyValid || !delayValid || !native || !seedUrls.trim() || starting || busy">
+          {{ starting ? "Starting…" : "Crawl" }}
+        </button>
+      </CardHeader>
+      <CardContent>
+        <ToolFieldCard
+          title="Start URLs"
+          description="Enter one URL per line."
+          label-for="crawl-start-urls"
+        >
+          <textarea id="crawl-start-urls" v-model="seedUrls" rows="2" required placeholder="https://example.com" />
+        </ToolFieldCard>
+        <ToolFieldCard
+          title="Crawl limits"
+          description="Set the browsing mode, page cap, and maximum depth."
+        >
+          <div class="form-grid">
+            <div class="crawler-field">
+              <label for="crawl-mode">Mode</label>
+              <AppSelect
+                id="crawl-mode"
+                v-model="mode"
+                :options="[
+                  { value: 'auto', label: 'Auto' },
+                  { value: 'always', label: 'Browser' },
+                  { value: 'never', label: 'Static' },
+                ]"
+              />
+            </div>
+            <label class="crawler-field">
+              <span>Max pages</span>
+              <input v-model.number="maxPages" type="number" min="1" max="4294967295" required />
+            </label>
+            <label class="crawler-field">
+              <span>Max depth</span>
+              <input v-model.number="maxDepth" type="number" min="0" max="4294967295" required />
+            </label>
+          </div>
+        </ToolFieldCard>
+        <!-- Keep the asset location visible alongside the basic crawl settings. -->
+        <ToolFieldCard
+          title="Download path"
+          description="Choose where to save downloaded assets."
+          label-for="crawl-download-path"
+        >
+          <div class="form-grid">
+            <div class="crawler-field form-grid-full">
+              <div class="crawler-inline-control">
+                <input
+                  id="crawl-download-path"
+                  v-model="assetFolder"
+                  placeholder="WITS Tools app data"
+                  :disabled="!assets || starting || busy"
+                />
+                <button
+                  class="crawler-folder-button"
+                  type="button"
+                  :disabled="!native || !assets || starting || busy"
+                  @click="action('Could not open folder picker', chooseFolder)"
+                >
+                  Choose folder
+                </button>
+              </div>
+            </div>
+          </div>
+        </ToolFieldCard>
+        <details class="crawler-stack">
+          <summary>Advanced settings</summary>
+          <div class="crawler-advanced tool-field-controls">
+            <ToolFieldCard
+              title="Timing"
+              description="Set how many requests run in parallel and how long to wait between them."
+            >
+              <div class="form-grid form-grid-full form-grid-sliders">
+                <!-- Keep precise entry available alongside both crawl sliders. -->
+                <AppSlider
+                  id="crawl-concurrency"
+                  v-model="concurrency"
+                  v-model:valid="concurrencyValid"
+                  class="crawler-field"
+                  label="Concurrency"
+                  :min="1"
+                  :max="20"
+                />
+                <AppSlider
+                  id="crawl-delay"
+                  v-model="delay"
+                  v-model:valid="delayValid"
+                  class="crawler-field"
+                  label="Request delay (ms)"
+                  :min="0"
+                  :max="5000"
+                  unit="ms"
+                  allow-above-max
+                />
+              </div>
+            </ToolFieldCard>
+            <ToolFieldCard
+              title="Connection"
+              description="Choose the network route used by the crawler."
+            >
+              <!-- Use the supported public DNS shortcuts and keep credential-bearing URLs masked. -->
+              <AppInputSelect
+                id="crawl-proxy"
+                v-model="proxy"
+                class="crawler-field"
+                label="Proxy or DNS"
+                type="password"
+                autocomplete="off"
+                placeholder="Proxy URL or DNS endpoint"
+                help="Choose a public resolver or enter a custom proxy or DNS endpoint."
+                :options="DNS_PRESETS"
+              />
+            </ToolFieldCard>
+            <ToolFieldCard
+              title="Scope filters"
+              description="Allow additional domains or exclude matching URLs."
+            >
+              <label class="crawler-field">
+                <span>Allowed domains</span>
+                <textarea v-model="domains" rows="2" placeholder="One domain per line" />
+              </label>
+              <label class="crawler-field">
+                <span>Exclude patterns</span>
+                <textarea v-model="exclusions" rows="2" placeholder="One regular expression per line" />
+              </label>
+            </ToolFieldCard>
+            <ToolFieldCard
+              title="Crawl options"
+              description="Control robots.txt handling and asset downloads."
+            >
+              <div class="crawler-actions">
+                <label><input v-model="respectRobots" type="checkbox" /> Respect robots.txt</label>
+                <label><input v-model="assets" type="checkbox" /> Download assets</label>
+              </div>
+            </ToolFieldCard>
+          </div>
+        </details>
+      </CardContent>
+    </Card>
   </form>
 
   <!-- Keep result tables next to the selected job while the list updates. -->
-  <section class="crawler-stack" aria-labelledby="crawler-history">
-    <div class="crawler-heading">
-      <h2 id="crawler-history">Crawl jobs</h2>
-      <button type="button" :disabled="!native" @click="refresh">Refresh</button>
-    </div>
-    <p v-if="!jobs.length" class="crawler-notice">No crawl jobs yet.</p>
-    <article v-for="job in jobs" :key="job.id" class="crawler-panel crawler-stack">
+  <Card as="section" aria-labelledby="crawler-history">
+    <CardHeader>
       <div class="crawler-heading">
-        <div class="crawler-stack crawler-compact">
-          <p class="crawler-url" :title="job.config.startUrls.join(', ')">{{ job.config.startUrls.join(", ") }}</p>
-          <p class="crawler-meta">
-            <span class="crawler-status" :data-status="job.status">{{ job.status }}</span>
-            {{ job.pages_crawled }} pages · {{ job.assets_downloaded }} assets · {{ new Date(job.created_at).toLocaleString() }}
-          </p>
+        <div>
+          <h2 id="crawler-history">Crawl jobs</h2>
+          <p class="tool-card-description">Review crawl progress and collected results.</p>
         </div>
-        <div class="crawler-actions">
-          <button type="button" :aria-pressed="selected === job.id" :disabled="busy"
-            @click="action('Could not load results', () => selectJob(selected === job.id ? undefined : job.id))">
-            {{ selected === job.id ? "Hide results" : "Results" }}
-          </button>
-          <button v-if="crawlActive(job)" type="button" :disabled="busy || job.status === 'stopping'"
-            @click="action('Could not stop crawl', async () => { await crawler.stop(job.id); await refresh(); })">
-            {{ job.status === "stopping" ? "Stopping…" : "Stop" }}
-          </button>
-          <button type="button" :disabled="busy"
-            @click="action('Could not export crawl', async () => { if (await crawler.export(job.id)) notify({ severity: 'success', title: 'Crawl exported' }); })">
-            Export JSON
-          </button>
-          <button v-if="!crawlActive(job)" type="button" :disabled="busy" @click="confirmDelete(job)">Delete</button>
-        </div>
+        <button type="button" :disabled="!native" @click="refresh">Refresh</button>
       </div>
-      <progress v-if="crawlActive(job)" :value="job.pages_crawled" :max="job.config.maxPages" aria-label="Pages crawled" />
+    </CardHeader>
+    <CardContent>
+      <p v-if="!jobs.length" class="crawler-notice">No crawl jobs yet.</p>
+      <Card as="article" v-for="job in jobs" :key="job.id" variant="child" class="tool-card-compact">
+        <div class="crawler-heading">
+          <div class="crawler-stack crawler-compact">
+            <p class="crawler-url" :title="job.config.startUrls.join(', ')">{{ job.config.startUrls.join(", ") }}</p>
+            <p class="crawler-meta">
+              <Badge class="crawler-status" :variant="job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : job.status === 'running' ? 'info' : job.status === 'stopping' ? 'warning' : 'neutral'">{{ job.status }}</Badge>
+              {{ job.pages_crawled }} pages · {{ job.assets_downloaded }} assets · {{ new Date(job.created_at).toLocaleString() }}
+            </p>
+          </div>
+          <div class="crawler-actions">
+            <button type="button" :aria-pressed="selected === job.id" :disabled="busy"
+              @click="action('Could not load results', () => selectJob(selected === job.id ? undefined : job.id))">
+              {{ selected === job.id ? "Hide results" : "Results" }}
+            </button>
+            <button v-if="crawlActive(job)" type="button" :disabled="busy || job.status === 'stopping'"
+              @click="action('Could not stop crawl', async () => { await crawler.stop(job.id); await refresh(); })">
+              {{ job.status === "stopping" ? "Stopping…" : "Stop" }}
+            </button>
+            <button type="button" :disabled="busy"
+              @click="action('Could not export crawl', async () => { if (await crawler.export(job.id)) notify({ severity: 'success', title: 'Crawl exported' }); })">
+              Export JSON
+            </button>
+            <button v-if="!crawlActive(job)" type="button" :disabled="busy" @click="confirmDelete(job)">Delete</button>
+          </div>
+        </div>
+        <progress v-if="crawlActive(job)" :value="job.pages_crawled" :max="job.config.maxPages" aria-label="Pages crawled" />
 
-      <div v-if="selected === job.id && results" class="crawler-stack">
-        <section aria-label="Crawled pages" class="crawler-stack crawler-compact">
-          <div class="crawler-heading">
-            <h3>Pages</h3>
-            <div class="crawler-actions">
-              <button type="button" :disabled="busy || pageOffset === 0" @click="paginate('pages', -1)">Previous pages</button>
-              <button type="button" :disabled="busy || pageOffset + pageSize >= results.pages_total" @click="paginate('pages', 1)">Next pages</button>
+        <div v-if="selected === job.id && results" class="crawler-stack">
+          <section aria-label="Crawled pages" class="crawler-stack crawler-compact">
+            <div class="crawler-heading">
+              <h3>Pages</h3>
+              <div class="crawler-actions">
+                <button type="button" :disabled="busy || pageOffset === 0" @click="paginate('pages', -1)">Previous pages</button>
+                <button type="button" :disabled="busy || pageOffset + pageSize >= results.pages_total" @click="paginate('pages', 1)">Next pages</button>
+              </div>
             </div>
-          </div>
-          <p v-if="!results.pages.length" class="crawler-meta">No pages collected.</p>
-          <div v-else class="crawler-table">
-            <table>
-              <thead><tr><th scope="col">URL</th><th scope="col">Title</th><th scope="col">HTTP</th><th scope="col">Depth</th></tr></thead>
-              <tbody>
-                <tr v-for="page in results.pages" :key="page.url">
-                  <td><a :href="page.url" @click.prevent="action('Could not open page', () => openUrl(page.url))">{{ page.url }}</a></td>
-                  <td>{{ page.title || "Untitled" }}</td><td>{{ page.status_code }}</td><td>{{ page.depth }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-        <section aria-label="Downloaded assets" class="crawler-stack crawler-compact">
-          <div class="crawler-heading">
-            <h3>Assets</h3>
-            <div class="crawler-actions">
-              <button type="button" :disabled="busy || assetOffset === 0" @click="paginate('assets', -1)">Previous assets</button>
-              <button type="button" :disabled="busy || assetOffset + pageSize >= results.assets_total" @click="paginate('assets', 1)">Next assets</button>
+            <p v-if="!results.pages.length" class="crawler-meta">No pages collected.</p>
+            <div v-else class="crawler-table">
+              <table>
+                <thead><tr><th scope="col">URL</th><th scope="col">Title</th><th scope="col">HTTP</th><th scope="col">Depth</th></tr></thead>
+                <tbody>
+                  <tr v-for="page in results.pages" :key="page.url">
+                    <td><a :href="page.url" @click.prevent="action('Could not open page', () => openUrl(page.url))">{{ page.url }}</a></td>
+                    <td>{{ page.title || "Untitled" }}</td><td>{{ page.status_code }}</td><td>{{ page.depth }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
-          <p v-if="!results.assets.length" class="crawler-meta">No assets downloaded.</p>
-          <div v-else class="crawler-table">
-            <table>
-              <thead><tr><th scope="col">URL</th><th scope="col">Type</th><th scope="col">Size</th></tr></thead>
-              <tbody>
-                <tr v-for="asset in results.assets" :key="asset.local_path">
-                  <td :title="asset.local_path">{{ asset.source_url }}</td><td>{{ asset.mime_type }}</td><td>{{ bytes(asset.size_bytes) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </article>
-  </section>
+          </section>
+          <section aria-label="Downloaded assets" class="crawler-stack crawler-compact">
+            <div class="crawler-heading">
+              <h3>Assets</h3>
+              <div class="crawler-actions">
+                <button type="button" :disabled="busy || assetOffset === 0" @click="paginate('assets', -1)">Previous assets</button>
+                <button type="button" :disabled="busy || assetOffset + pageSize >= results.assets_total" @click="paginate('assets', 1)">Next assets</button>
+              </div>
+            </div>
+            <p v-if="!results.assets.length" class="crawler-meta">No assets downloaded.</p>
+            <div v-else class="crawler-table">
+              <table>
+                <thead><tr><th scope="col">URL</th><th scope="col">Type</th><th scope="col">Size</th></tr></thead>
+                <tbody>
+                  <tr v-for="asset in results.assets" :key="asset.local_path">
+                    <td :title="asset.local_path">{{ asset.source_url }}</td><td>{{ asset.mime_type }}</td><td>{{ bytes(asset.size_bytes) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </Card>
+    </CardContent>
+  </Card>
 
   <dialog ref="deleteDialog" aria-labelledby="delete-crawl-title" @close="finishDelete">
     <form class="dialog-content" method="dialog">
