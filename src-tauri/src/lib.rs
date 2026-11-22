@@ -24,7 +24,6 @@ pub fn run() {
         crawler::commands::crawler_stop,
         crawler::commands::crawler_delete,
         crawler::commands::crawler_export,
-        crawler::commands::crawler_media_info,
         crawler::commands::crawler_pick_folder,
         crawler::commands::crawler_download,
         crawler::commands::crawler_downloads,

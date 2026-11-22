@@ -19,7 +19,7 @@ struct Session {
     status: &'static str,
     navigation: Option<u64>,
     route: Option<String>,
-    sources: Vec<(String, Uuid, Candidate)>,
+    sources: Vec<CapturedStream>,
 }
 
 impl Default for Session {
@@ -36,7 +36,25 @@ impl Default for Session {
 #[derive(Serialize)]
 pub(crate) struct CaptureSnapshot {
     status: &'static str,
-    sources: Vec<Source>,
+    sources: Vec<CapturedSummary>,
+}
+
+// Keep the first observation time and asynchronously resolved duration stable on repeats.
+struct CapturedStream {
+    url: String,
+    id: Uuid,
+    candidate: Candidate,
+    captured_at: u64,
+    duration_seconds: Option<f64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CapturedSummary {
+    #[serde(flatten)]
+    source: Source,
+    captured_at: u64,
+    duration_seconds: Option<f64>,
 }
 
 impl CaptureBrowser {
@@ -49,7 +67,11 @@ impl CaptureBrowser {
                 .sources
                 .iter()
                 .rev()
-                .map(|(_, id, candidate)| candidate.summary(*id))
+                .map(|stream| CapturedSummary {
+                    source: stream.candidate.summary(stream.id),
+                    captured_at: stream.captured_at,
+                    duration_seconds: stream.duration_seconds,
+                })
                 .collect(),
         })
     }
@@ -59,24 +81,65 @@ impl CaptureBrowser {
         Ok(sources
             .sources
             .iter()
-            .find(|(_, key, _)| *key == id)
-            .map(|(_, _, candidate)| candidate.clone()))
+            .find(|stream| stream.id == id)
+            .map(|stream| stream.candidate.clone()))
     }
 
     /// Refresh repeat observations in place so a source keeps its ID and latest headers.
     #[cfg(windows)]
     fn observe(&self, url: String, candidate: Candidate) {
-        if let Ok(mut session) = self.0.lock() {
-            let sources = &mut session.sources;
-            if let Some((_, _, current)) = sources.iter_mut().find(|(key, _, _)| *key == url) {
-                *current = candidate;
-            } else {
-                if sources.len() == 128 {
-                    sources.remove(0);
-                }
-                sources.push((url, Uuid::new_v4(), candidate));
-            }
+        use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+        static PROBES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(3);
+        let Ok(mut session) = self.0.lock() else {
+            return;
+        };
+        let sources = &mut session.sources;
+        if let Some(stream) = sources.iter_mut().find(|stream| stream.url == url) {
+            let page_name = stream.candidate.page_name.clone();
+            stream.candidate = candidate;
+            stream.candidate.page_name = page_name.or(stream.candidate.page_name.take());
+            return;
         }
+        if sources.len() == 128 {
+            sources.remove(0);
+        }
+        let id = Uuid::new_v4();
+        sources.push(CapturedStream {
+            url,
+            id,
+            candidate,
+            captured_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            duration_seconds: None,
+        });
+        drop(session);
+
+        // Keep probes off the WebView thread and discard results after the capture closes.
+        let browser = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let Ok(_permit) = PROBES.acquire().await else {
+                return;
+            };
+            let Ok(Some(candidate)) = browser.source(id) else {
+                return;
+            };
+            let Ok(Ok(Some(duration))) = tokio::time::timeout(
+                Duration::from_secs(8),
+                super::media::captured_duration(candidate),
+            )
+            .await
+            else {
+                return;
+            };
+            if let Ok(mut session) = browser.0.lock()
+                && let Some(stream) = session.sources.iter_mut().find(|stream| stream.id == id)
+            {
+                stream.duration_seconds = Some(duration);
+            }
+        });
     }
 }
 

@@ -1,6 +1,6 @@
 <!-- Captures media in WebView2 and tracks native downloads. -->
 <script setup lang="ts">
-import { ref, shallowRef } from "vue";
+import { ref } from "vue";
 
 import AppInputSelect from "../AppInputSelect.vue";
 import AppSlider from "../AppSlider.vue";
@@ -22,7 +22,6 @@ const url = ref("");
 const folder = ref("");
 const filename = ref("");
 const format = ref("best");
-const formats = shallowRef<{ id: string; bandwidth: number }[]>([]);
 const overwrite = ref(false);
 const workers = ref(4);
 const workersValid = ref(true);
@@ -48,18 +47,10 @@ async function download(source?: MediaSource) {
   });
 }
 
-// Inspect formats with the same selected media context used for a subsequent transfer.
 function request(source?: MediaSource) {
   return { url: source ? "" : url.value.trim(), folder: folder.value || null,
     filename: filename.value.trim() || null, format: format.value.trim() || "best",
     proxy: proxy.value.trim() || null, overwrite: overwrite.value, workers: workers.value };
-}
-
-async function inspect(source?: MediaSource) {
-  await action("Could not inspect formats", async () => {
-    formats.value = (await crawler.mediaInfo(request(source), source?.id ?? null)).formats;
-    if (!formats.value.length) notify({ severity: "info", title: "No selectable variants" });
-  });
 }
 
 // Start the private capture session or download a known media URL.
@@ -117,9 +108,9 @@ async function chooseFolder() {
         </div>
         <label class="crawler-field">
           <span>Filename</span>
-          <input v-model="filename" placeholder="From media URL" />
+          <input v-model="filename" :placeholder="mode === 'page' ? 'From page title or URL' : 'From media URL'" />
         </label>
-        <!-- Preserve manual format IDs alongside presets discovered from the manifest. -->
+        <!-- Keep common format presets and allow an explicit format ID. -->
         <AppInputSelect
           id="media-format"
           v-model="format"
@@ -130,7 +121,6 @@ async function chooseFolder() {
           :options="[
             { value: 'best', label: 'Best' },
             { value: 'worst', label: 'Worst' },
-            ...formats.map(({ id, bandwidth }) => ({ value: id, label: `${id} · ${bandwidth} bps` })),
           ]"
         />
         <AppInputSelect
@@ -153,11 +143,10 @@ async function chooseFolder() {
             label="Download workers"
             :min="1"
             :max="16"
-            help="Parallel segments or byte ranges per download."
+            help="Parallel segments or byte ranges per file, when supported."
           />
         </div>
       </div>
-      <button v-if="mode === 'direct'" type="button" :disabled="!native || !url.trim() || busy" @click="inspect()">Inspect formats</button>
       <label class="crawler-check"><input v-model="overwrite" type="checkbox" /> Replace an existing file after a successful download</label>
     </details>
   </form>
@@ -172,10 +161,11 @@ async function chooseFolder() {
       <li v-for="source in browserCapture.sources" :key="source.id" class="crawler-heading">
         <div class="crawler-stack crawler-compact">
           <p class="crawler-url" :title="source.url">{{ source.url }}</p>
-          <p class="crawler-meta">{{ source.kind.toUpperCase() }}</p>
+          <p class="crawler-meta">{{ source.kind.toUpperCase() }} · {{ source.durationSeconds == null ? "Duration unavailable" : "Duration " + mediaTime(source.durationSeconds) }}
+            · Captured {{ new Date(source.capturedAt * 1000).toLocaleString() }}
+          </p>
         </div>
         <div class="crawler-actions">
-          <button v-if="source.kind !== 'direct'" type="button" :disabled="busy" @click="inspect(source)">Inspect formats</button>
           <button type="button" :disabled="busy || !workersValid" @click="download(source)">Download</button>
         </div>
       </li>

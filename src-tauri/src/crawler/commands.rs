@@ -146,17 +146,6 @@ pub(crate) async fn crawler_export(app: AppHandle, id: Uuid) -> Result<bool> {
     Ok(true)
 }
 
-/// Read the variants of a manual URL or an in-memory capture candidate.
-#[tauri::command]
-pub(crate) async fn crawler_media_info(
-    state: State<'_, DesktopState>,
-    request: Download,
-    source: Option<Uuid>,
-) -> Result<media::Info> {
-    let candidate = state.resolve_source(source)?;
-    media::info(&request, candidate).await
-}
-
 impl DesktopState {
     /// Pair a safe source ID with the captured request context only inside the native process.
     fn resolve_source(&self, source: Option<Uuid>) -> Result<Option<Candidate>> {

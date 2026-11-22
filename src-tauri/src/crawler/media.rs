@@ -54,6 +54,7 @@ pub struct Candidate {
     headers: Vec<(String, String)>,
     proxy: Option<String>,
     segments: usize,
+    pub(super) page_name: Option<String>,
 }
 
 impl Candidate {
@@ -72,6 +73,7 @@ impl Candidate {
             headers,
             proxy,
             segments: 0,
+            page_name: None,
         })
     }
 
@@ -315,6 +317,9 @@ pub(super) async fn download_with_size(
     cancellation: CancellationToken,
     progress: impl Fn(Progress) + Send + Sync,
 ) -> Result<(PathBuf, u64)> {
+    let page_name = candidate
+        .as_ref()
+        .and_then(|source| source.page_name.clone());
     let (transfer, hint) = Transfer::new(&request, candidate)?;
     let prepared = async {
         let (response, kind) = transfer.response(hint).await?;
@@ -324,6 +329,15 @@ pub(super) async fn download_with_size(
             .await
             .map_err(|_| Error::File)?;
         let name = output_name(&final_url, kind, request.filename.as_deref());
+        let name = match (request.filename.as_deref(), page_name.as_deref()) {
+            (None | Some(""), Some(page)) => {
+                match Path::new(&name).extension().and_then(|ext| ext.to_str()) {
+                    Some(ext) => filename(&format!("{}.{ext}", filename(page))),
+                    None => filename(page),
+                }
+            }
+            _ => name,
+        };
         let output = folder.join(name);
         // Lock a separate reservation file to avoid simultaneous writers across app and CLI.
         let digest = blake3::hash(
@@ -352,22 +366,7 @@ pub(super) async fn download_with_size(
         match kind {
             Kind::Direct => transfer.direct(response, file.as_ref(), &progress).await?,
             Kind::Hls => {
-                let playlist = manifest::hls(
-                    &network::limited(response, MANIFEST_LIMIT).await?,
-                    &final_url,
-                )?;
-                let playlist = if playlist.variants.is_empty() {
-                    playlist
-                } else {
-                    let selected = select(&playlist.variants, format)?;
-                    let url = selected.url.as_ref().ok_or(Error::InvalidManifest)?;
-                    let response = transfer.fetch(url, None).await?;
-                    if !response.status().is_success() {
-                        return Err(Error::Network);
-                    }
-                    let base = response.url().clone();
-                    manifest::hls(&network::limited(response, MANIFEST_LIMIT).await?, &base)?
-                };
+                let playlist = transfer.hls_playlist(response, &final_url, format).await?;
                 transfer
                     .segments(
                         playlist.segments,
@@ -421,7 +420,54 @@ pub(super) async fn download_with_size(
     Ok((output, size))
 }
 
+// Read only a manifest and, for HLS master playlists, the default rendition.
+pub(super) async fn captured_duration(candidate: Candidate) -> Result<Option<f64>> {
+    if matches!(candidate.kind, Kind::Direct) {
+        return Ok(None);
+    }
+    let (transfer, hint) = Transfer::new(&Download::default(), Some(candidate))?;
+    let (response, kind) = transfer.response(hint).await?;
+    let url = response.url().clone();
+    match kind {
+        Kind::Direct => Ok(None),
+        Kind::Hls => Ok(transfer
+            .hls_playlist(response, &url, "best")
+            .await?
+            .duration_seconds),
+        Kind::Dash => {
+            let variants =
+                manifest::dash(&network::limited(response, MANIFEST_LIMIT).await?, &url)?;
+            Ok(select(&variants, "best")?.duration_seconds)
+        }
+    }
+}
+
 impl Transfer {
+    // Use the same variant selection for metadata and downloads.
+    async fn hls_playlist(
+        &self,
+        response: Response,
+        final_url: &Url,
+        format: &str,
+    ) -> Result<manifest::Playlist> {
+        let playlist = manifest::hls(
+            &network::limited(response, MANIFEST_LIMIT).await?,
+            final_url,
+        )?;
+        Ok(if playlist.variants.is_empty() {
+            playlist
+        } else {
+            let selected = select(&playlist.variants, format)?;
+            let url = selected.url.as_ref().ok_or(Error::InvalidManifest)?;
+            let response = self.fetch(url, None).await?;
+            if !response.status().is_success() {
+                return Err(Error::Network);
+            }
+            let base = response.url().clone();
+            manifest::hls(&network::limited(response, MANIFEST_LIMIT).await?, &base)?
+        })
+    }
+
     fn new(request: &Download, candidate: Option<Candidate>) -> Result<(Self, Option<Kind>)> {
         let (source, hint, headers, proxy) = if let Some(candidate) = candidate {
             (

@@ -143,10 +143,13 @@ pub(in crate::crawler) async fn open(
                 view.add_NavigationCompleted(&completed, &mut 0)?;
                 let view: ICoreWebView2_2 = view.cast()?;
                 let observer =
-                    WebResourceResponseReceivedEventHandler::create(Box::new(move |_, args| {
+                    WebResourceResponseReceivedEventHandler::create(Box::new(move |view, args| {
                         if let Some(args) = args {
                             match candidate(&args, trace, proxy.as_deref()) {
-                                Ok(Some((url, candidate))) => browser.observe(url, candidate),
+                                Ok(Some((url, mut candidate))) => {
+                                    candidate.page_name = view.as_ref().and_then(page_name);
+                                    browser.observe(url, candidate);
+                                }
                                 Ok(None) => {}
                                 Err(error) => trace.record(format_args!(
                                     "response inspection failed hresult={:#010x}",
@@ -233,6 +236,25 @@ fn log_navigation(
         trace.record(format_args!("navigation completed id={id} success={} http_status={http_status:?} web_error={} reason={reason:?}", success.as_bool(), error.0));
     }
     Ok(())
+}
+
+/// Prefer the page title, with the last nonempty URL path component as fallback.
+fn page_name(view: &ICoreWebView2) -> Option<String> {
+    unsafe {
+        let mut title = PWSTR::null();
+        let _ = view.DocumentTitle(&mut title);
+        let title = take_pwstr(title);
+        if !title.trim().is_empty() && http_url(&title).is_err() {
+            return Some(title.trim().chars().take(120).collect());
+        }
+        let mut uri = PWSTR::null();
+        let _ = view.Source(&mut uri);
+        let url = http_url(&take_pwstr(uri)).ok()?;
+        url.path_segments()?
+            .rfind(|part| !part.is_empty())
+            .or_else(|| url.host_str())
+            .map(|name| name.chars().take(120).collect())
+    }
 }
 
 /// Filter by status and media type before copying the small replay-header allowlist.

@@ -67,7 +67,7 @@ export interface DownloadJob {
 
 export interface CaptureSnapshot {
   status: "closed" | "loading" | "ready" | "failed";
-  sources: MediaSource[];
+  sources: (MediaSource & { capturedAt: number; durationSeconds: number | null })[];
 }
 
 // Keep all native names and argument shapes out of the view components.
@@ -81,8 +81,6 @@ export const crawler = {
   pickFolder: () => invoke<string | null>("crawler_pick_folder"),
   download: (request: DownloadRequest, source: string | null) =>
     invoke<string>("crawler_download", { request, source }),
-  mediaInfo: (request: DownloadRequest, source: string | null) =>
-    invoke<{ formats: { id: string; bandwidth: number }[] }>("crawler_media_info", { request, source }),
   downloads: () => invoke<DownloadJob[]>("crawler_downloads"),
   cancelDownload: (id: string) => invoke<void>("crawler_cancel_download", { id }),
   // The embedded browser owns its own session and candidate list.
