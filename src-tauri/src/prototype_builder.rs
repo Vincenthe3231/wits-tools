@@ -1,10 +1,12 @@
 //! Imports GitHub starter data and stores independent local prototype snapshots.
 
-use std::{fs, io::Write, path::PathBuf, time::Duration};
+mod storage;
+
+use std::time::Duration;
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use url::Url;
 use uuid::Uuid;
 
@@ -50,15 +52,6 @@ pub(crate) struct Imported {
     starter: Starter,
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Variant {
-    id: Option<Uuid>,
-    name: String,
-    source_url: String,
-    starter: Starter,
-}
-
 // Return stable error codes for action-specific messages in Vue.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +61,7 @@ pub(crate) enum Error {
     InvalidStarter,
     ImportUnavailable,
     InvalidName,
+    InvalidDocument,
     StorageUnavailable,
 }
 
@@ -165,66 +159,18 @@ pub(crate) async fn prototype_import(
     .await
 }
 
-// Resolve all snapshot locations inside application-owned storage.
-fn storage(app: &AppHandle) -> Result<PathBuf, Error> {
-    app.path()
-        .app_data_dir()
-        .map(|path| path.join("prototype-builder"))
-        .map_err(|_| Error::StorageUnavailable)
+// Run local storage through the same app-data boundary as legacy variants.
+#[tauri::command]
+pub(crate) async fn prototype_save(
+    app: AppHandle,
+    variant: storage::Variant,
+) -> Result<Uuid, Error> {
+    storage::save(&storage::directory(&app)?, variant)
 }
 
 #[tauri::command]
-pub(crate) async fn prototype_save(app: AppHandle, variant: Variant) -> Result<Uuid, Error> {
-    save(storage(&app)?, variant)
-}
-
-// Flush the staged snapshot before replacing an existing variant.
-fn save(dir: PathBuf, mut variant: Variant) -> Result<Uuid, Error> {
-    validate(&variant.starter)?;
-    if variant.name.trim().is_empty() {
-        return Err(Error::InvalidName);
-    }
-    variant.name = variant.name.trim().to_owned();
-    variant.source_url = repository(&variant.source_url)?.0;
-    let id = *variant.id.get_or_insert_with(Uuid::new_v4);
-    fs::create_dir_all(&dir).map_err(|_| Error::StorageUnavailable)?;
-    let mut file = tempfile::NamedTempFile::new_in(&dir).map_err(|_| Error::StorageUnavailable)?;
-    serde_json::to_writer(&mut file, &variant).map_err(|_| Error::StorageUnavailable)?;
-    file.flush().map_err(|_| Error::StorageUnavailable)?;
-    file.as_file()
-        .sync_all()
-        .map_err(|_| Error::StorageUnavailable)?;
-    file.persist(dir.join(format!("{id}.json")))
-        .map_err(|_| Error::StorageUnavailable)?;
-    Ok(id)
-}
-
-#[tauri::command]
-pub(crate) async fn prototype_list(app: AppHandle) -> Result<Vec<Variant>, Error> {
-    list(storage(&app)?)
-}
-
-// Ignore staging files and return saved snapshots in display order.
-fn list(dir: PathBuf) -> Result<Vec<Variant>, Error> {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(_) => return Err(Error::StorageUnavailable),
-    };
-    let mut variants = Vec::new();
-    for entry in entries {
-        let path = entry.map_err(|_| Error::StorageUnavailable)?.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let file = fs::File::open(path).map_err(|_| Error::StorageUnavailable)?;
-        let variant: Variant =
-            serde_json::from_reader(file).map_err(|_| Error::StorageUnavailable)?;
-        validate(&variant.starter)?;
-        variants.push(variant);
-    }
-    variants.sort_by(|left, right| left.name.cmp(&right.name).then(left.id.cmp(&right.id)));
-    Ok(variants)
+pub(crate) async fn prototype_list(app: AppHandle) -> Result<Vec<storage::StoredVariant>, Error> {
+    storage::list(&storage::directory(&app)?)
 }
 
 #[cfg(test)]
@@ -253,32 +199,5 @@ mod tests {
         );
         assert!(repository("https://github.com.evil.test/owner/repo").is_err());
         assert!(repository("https://github.com/owner/repo/tree/main").is_err());
-    }
-
-    // Saving a copy and overwriting one snapshot leave the other snapshot independent.
-    #[test]
-    fn saves_and_reopens_independent_variants() {
-        let temp = tempfile::tempdir().unwrap();
-        let dir = temp.path().join("variants");
-        let make_variant = |id, name: &str| Variant {
-            id,
-            name: name.to_owned(),
-            source_url: "https://github.com/owner/repo".to_owned(),
-            starter: serde_json::from_str(include_str!(
-                "../../examples/prototype-builder/wits-starter.json"
-            ))
-            .unwrap(),
-        };
-        let first = save(dir.clone(), make_variant(None, "First")).unwrap();
-        let second = save(dir.clone(), make_variant(None, "Second")).unwrap();
-        let mut revised = make_variant(Some(first), "First");
-        revised.starter.cards[0].title = "Revised title".to_owned();
-        assert_eq!(save(dir.clone(), revised).unwrap(), first);
-        let variants = list(dir).unwrap();
-        assert_eq!(variants.len(), 2);
-        assert_eq!(variants[0].id, Some(first));
-        assert_eq!(variants[0].starter.cards[0].title, "Revised title");
-        assert_eq!(variants[1].id, Some(second));
-        assert_eq!(variants[1].starter.cards[0].title, "Release status");
     }
 }

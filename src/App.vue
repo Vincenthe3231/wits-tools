@@ -1,6 +1,6 @@
 <!-- Hosts workspace navigation, retained tool sessions, and window-close confirmation. -->
 <script setup lang="ts">
-import { computed, nextTick, onScopeDispose, ref } from "vue";
+import { computed, nextTick, onScopeDispose, ref, type ComponentPublicInstance } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { crawler } from "./api/crawler";
@@ -19,6 +19,18 @@ type CloseChoice = "save" | "discard" | "cancel";
 
 const route = useRoute();
 const editor = ref<InstanceType<typeof MarkdownEditorPage>>();
+
+// Track the active prototype page so the existing native close listener can consult it.
+type PrototypeBuilderPage = {
+  requestClose(ask: () => Promise<CloseChoice>): Promise<boolean>;
+};
+let prototypePage: PrototypeBuilderPage | undefined;
+
+function setPrototypePage(instance: Element | ComponentPublicInstance | null) {
+  prototypePage = instance && "requestClose" in instance && typeof instance.requestClose === "function"
+    ? instance as ComponentPublicInstance & PrototypeBuilderPage
+    : undefined;
+}
 
 // Keep search on the dashboard and derive tool names from the shared catalog.
 const isDashboard = computed(() => route.name === "dashboard");
@@ -75,9 +87,11 @@ function finishClosePrompt() {
   resolveClose = undefined;
 }
 
-// Wait for the editor's close decision before cancelling native crawler activity.
+// Complete any pending tool save before cancelling native crawler activity.
 const closeError = useWindowClose(async () => {
   if (editor.value && !(await editor.value.requestClose(askClose))) return false;
+  if (route.name === "prototype-builder" && prototypePage
+    && !(await prototypePage.requestClose(askClose))) return false;
   await crawler.shutdown().catch(() => undefined);
   return true;
 });
@@ -137,6 +151,7 @@ const closeError = useWindowClose(async () => {
                 :is="Component"
                 v-if="!enterEditor"
                 :key="route.path"
+                :ref="route.name === 'prototype-builder' ? setPrototypePage : undefined"
                 v-bind="isDashboard ? { query: toolQuery } : {}"
               />
             </KeepAlive>

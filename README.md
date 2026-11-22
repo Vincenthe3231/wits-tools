@@ -125,9 +125,11 @@ On Windows, the release executable is `src-tauri/target/release/wits-tools.exe`.
 
 ## Prototype Builder
 
-Open **Prototype Builder** from the dashboard. Choose **Open bundled sample** to start offline, or paste a public GitHub repository URL and choose **Import GitHub starter**. A supported repo contains `examples/prototype-builder/wits-starter.json` on its default branch. See the [sample dashboard](examples/prototype-builder/wits-starter.json) for the version 1 format. WITS imports the dashboard data directly without requiring Git, a package manager, or a project build.
+Open **Prototype Builder** from the dashboard and choose **New prototype** to start with a blank screen. Drag a heading, text block, card, or button from the palette into the canvas, or use its **Add** action. Select a block to edit its properties or remove it. Reorder blocks with their drag handles or use **Move to position…** in **Block actions**. Choose **Preview** to see the screen without editing controls. Buttons are visual placeholders in this single-screen editor.
 
-Drag cards to reorder them or use **Move up** and **Move down**. Rename a card and check the live preview, then choose **Save variant**. Use **Save as new** to keep a separate copy. Saved variants reopen offline from the **Saved variants** list. The WITS Tools repository URL becomes a valid GitHub import after the fixture reaches the public default branch.
+Choose **Open bundled sample** to start offline, or paste a public GitHub repository URL and choose **Import GitHub starter**. A compatible repo contains `examples/prototype-builder/wits-starter.json` on its default branch. The [public starter](https://github.com/Vincenthe3231/wits-prototype-starter) is ready to import. WITS reads the version 1 dashboard data without requiring a clone, dependency installation, or project build.
+
+Choose **Save variant** to save the document locally, or **Save as new** to keep a separate copy. Saved variants reopen offline. Opening a version 1 starter or older saved variant converts its dashboard title and cards into editable blocks. Saving writes the new local document format.
 
 ## Markdown images
 

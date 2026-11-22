@@ -158,7 +158,7 @@ async function chooseFolder() {
                 label="Proxy or DNS"
                 type="password"
                 autocomplete="off"
-                placeholder="Proxy URL or DNS endpoint"
+                placeholder="Enter your custom proxy or choose a public resolver"
                 help="Reopen the capture browser after changing this setting."
                 :options="DNS_PRESETS"
               />

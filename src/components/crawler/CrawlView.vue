@@ -226,7 +226,7 @@ function paginate(kind: "pages" | "assets", step: number) {
                 label="Proxy or DNS"
                 type="password"
                 autocomplete="off"
-                placeholder="Proxy URL or DNS endpoint"
+                placeholder="Enter your custom proxy or choose a public resolver"
                 help="Choose a public resolver or enter a custom proxy or DNS endpoint."
                 :options="DNS_PRESETS"
               />

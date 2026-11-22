@@ -5,8 +5,8 @@ export const tools = [
   {
     routeName: "prototype-builder",
     name: "Prototype Builder",
-    description: "Import a GitHub dashboard starter, rearrange cards, and save a local variant.",
-    keywords: "prototype github dashboard drag drop remix starter",
+    description: "Build a screen from blocks, import a GitHub starter, and save a local variant.",
+    keywords: "prototype canvas blocks github dashboard drag drop remix starter",
     icon: "document",
   },
   {
