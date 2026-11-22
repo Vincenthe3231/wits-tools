@@ -78,3 +78,13 @@ When the numeric entry permits values above the slider range, keep the exact val
 2. Assign both light and dark values for a new semantic color. Keep the raw palette values in the theme declarations. Introduce primitive aliases when multiple semantic roles need a named palette value. Add a component alias when it clarifies an independent component state.
 3. Use `--text-primary` on `--surface-selected`. In the light theme, `--text-muted` on that fill is only 3.88:1. Use an indicator and an accessible pressed or selected state alongside the fill when a control represents the active choice.
 4. Check ordinary text for at least 4.5:1 contrast and essential visual indicators for at least 3:1 against adjacent colors. Check each theme and the relevant state, including keyboard focus. Update this document alongside the stylesheet when a shared token changes. [WCAG text contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html) · [WCAG non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html)
+
+## Tool cards and badges
+
+API Tester and Crawler share the card styles in [tool-cards.css](src/styles/tool-cards.css). Outer cards use a borderless 12 px radius, a surface blended from 86% editor and 14% toolbar colors, and theme-aware shadows. Use 16 px outer padding below 34 rem of tool width and 24 px at wider sizes, with 8 px between child cards.
+
+Child cards use an inset surface and a 16 px radius. Place the title and short description beside the existing controls and stack them above the controls below 34 rem. Text, URL, numeric, and password fields, textareas, and select triggers have a 24 px radius. Single-line fields are at least 44 px tall with 16 px horizontal padding. Use the existing accent focus ring and error indicator. Checkboxes, radio buttons, and sliders keep their control shapes.
+
+Fine-pointer hover fades in an outer card's raised shadow over 180 ms. Clicking any child or control activates its outer card and pulses the full stationary rim for 1.4 seconds. The active card stays selected for the effect until another card is activated, the user presses outside, or the view changes. Reduced motion uses static hover elevation. Forced colors suppress the decorative rim.
+
+Badge pills use 12 px semibold text. Neutral pills pair the toolbar surface with muted text. Info, warning, success, and error pills use the matching shared status surface, text, and indicator. Each pill names its state in text.

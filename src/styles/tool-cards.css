@@ -1,0 +1,239 @@
+/* Shares card surfaces, elevation, and status pills across the tool views. */
+:root {
+  --tool-card-surface: color-mix(in srgb, var(--surface-editor) 86%, var(--surface-toolbar));
+  --tool-card-radius: 12px;
+  --tool-card-shadow: 0 1px 3px light-dark(#24312b22, #0006);
+  --tool-card-raised: 0 6px 16px light-dark(#24312b30, #0008);
+  --tool-card-elevation-duration: 180ms;
+  --tool-card-shimmer-duration: 1.4s;
+  --tool-card-child-radius: 16px;
+  --tool-field-radius: 24px;
+  --tool-card-child-surface: color-mix(in srgb, var(--surface-toolbar) 65%, var(--surface-editor));
+  --tool-card-rim-color: light-dark(#60866c, #b9efd0);
+}
+
+.tool-workspace {
+  container: tool-workspace / inline-size;
+}
+
+.tool-card {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  padding: 16px;
+  border-radius: var(--tool-card-radius);
+  background: var(--tool-card-surface);
+  box-shadow: var(--tool-card-shadow);
+}
+
+.tool-card-compact {
+  gap: 8px;
+  padding: 12px;
+}
+
+.tool-card > [data-slot="card-content"] {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+@container tool-workspace (min-width: 34rem) {
+  .tool-card[data-card-variant="outer"] {
+    padding: 24px;
+  }
+}
+
+/* Fade in a separately painted shadow without moving controls. */
+.tool-card-motion {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.tool-card-motion::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--tool-card-raised);
+  opacity: 0;
+  transition: opacity var(--tool-card-elevation-duration) ease-out;
+  content: "";
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tool-card[data-card-variant="outer"]:hover:not(:has(.tool-card[data-card-variant="outer"]:hover)) > .tool-card-motion::before {
+    opacity: 1;
+  }
+}
+
+/* Pulse the entire rim in place, with brighter corners and a soft outer glow. */
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  .tool-card[data-card-active] > .tool-card-motion::after {
+    position: absolute;
+    inset: -1px;
+    padding: 2px;
+    border-radius: inherit;
+    background:
+      radial-gradient(ellipse at top left, var(--tool-card-rim-color), transparent 42%),
+      radial-gradient(ellipse at bottom right, var(--tool-card-rim-color), transparent 42%),
+      color-mix(in srgb, var(--tool-card-rim-color) 40%, transparent);
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    animation: tool-card-shimmer var(--tool-card-shimmer-duration) ease-in-out both;
+    content: "";
+  }
+}
+
+@keyframes tool-card-shimmer {
+  0%, 100% {
+    opacity: 0;
+  }
+
+  24%, 64% {
+    opacity: 0.9;
+  }
+
+  44% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-card-motion::before {
+    transition: none;
+  }
+}
+
+/* Keep badge semantics visible in text and use one shape across all variants. */
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 8px;
+  border: 1px solid var(--badge-indicator, transparent);
+  border-radius: 999px;
+  background: var(--badge-surface, var(--surface-toolbar));
+  color: var(--badge-text, var(--text-muted));
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.tool-badge[data-variant="info"] {
+  --badge-surface: var(--status-info-surface);
+  --badge-text: var(--status-info-text);
+  --badge-indicator: var(--status-info-indicator);
+}
+
+.tool-badge[data-variant="warning"] {
+  --badge-surface: var(--status-warning-surface);
+  --badge-text: var(--status-warning-text);
+  --badge-indicator: var(--status-warning-indicator);
+}
+
+.tool-badge[data-variant="success"] {
+  --badge-surface: var(--status-success-surface);
+  --badge-text: var(--status-success-text);
+  --badge-indicator: var(--status-success-indicator);
+}
+
+.tool-badge[data-variant="error"] {
+  --badge-surface: var(--status-error-surface);
+  --badge-text: var(--status-error-text);
+  --badge-indicator: var(--status-error-indicator);
+}
+
+/* Use different surfaces for the outer group, inset row, and field itself. */
+.tool-card[data-card-variant="child"] {
+  padding: 12px;
+  border-radius: var(--tool-card-child-radius);
+  background: var(--tool-card-child-surface);
+  box-shadow: none;
+}
+
+.tool-field-card {
+  gap: 8px;
+  align-items: start;
+}
+
+.tool-field-intro {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-field-intro > :is(label, h3) {
+  font-weight: 650;
+}
+
+.tool-field-intro > p,
+.tool-card-description {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.tool-field-controls,
+.tool-card-children {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Inner grids respond to the space left after the description column. */
+.tool-field-card > .tool-field-controls {
+  container: tool-controls / inline-size;
+}
+
+@container tool-controls (width < 17rem) {
+  .tool-field-controls .crawler-inline-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tool-field-controls .crawler-folder-button {
+    justify-self: start;
+  }
+}
+
+@container tool-workspace (min-width: 34rem) {
+  .tool-field-card {
+    grid-template-columns: minmax(8rem, 1fr) minmax(0, 2.5fr);
+    gap: 16px;
+  }
+}
+
+/* Round the actual controls while leaving native toggles and slider tracks intact. */
+.tool-workspace .tool-card :is(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea, .app-select-trigger) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  padding-inline: 16px;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 75%, var(--surface-editor));
+  border-radius: var(--tool-field-radius);
+  background: color-mix(in srgb, var(--surface-editor) 90%, var(--surface-toolbar));
+}
+
+.tool-workspace .tool-card :is(input:not([type="checkbox"], [type="radio"], [type="range"]), .app-select-trigger) {
+  min-height: 44px;
+}
+
+.tool-workspace .tool-card textarea {
+  padding-block: 10px;
+}
+
+.tool-workspace .tool-card .app-select-trigger.app-select-compact {
+  min-width: 44px;
+}
+
+.tool-workspace .tool-card :is(input, textarea, .app-select-trigger):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.tool-workspace .tool-card :is(input, textarea, .app-select-trigger)[aria-invalid="true"] {
+  border-color: var(--status-error-indicator);
+}

@@ -1,4 +1,8 @@
 /* Styles both crawler views with the workspace's existing semantic tokens. */
+.crawler-card-workspace {
+  height: 100%;
+}
+
 .crawler-workspace {
   height: 100%;
   min-width: 0;
@@ -34,7 +38,6 @@
   display: none;
 }
 
-.crawler-panel,
 .crawler-notice {
   min-width: 0;
   padding: 0.8rem;
@@ -81,15 +84,6 @@
 
 .crawler-advanced {
   margin-block: 0.75rem;
-}
-
-/* Group a field label and its action without taking width from the input below. */
-.crawler-field-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
 }
 
 .crawler-field {
@@ -198,8 +192,7 @@ button.crawler-folder-button:focus-visible {
   accent-color: var(--accent-strong);
 }
 
-.crawler-error,
-.crawler-status[data-status="failed"] {
+.crawler-error {
   color: var(--status-error-text);
 }
 
@@ -209,13 +202,22 @@ button.crawler-folder-button:focus-visible {
   background: var(--status-error-surface);
 }
 
+/* Keep status text and inline telemetry aligned as they wrap. */
 .crawler-status {
   margin-inline-end: 0.3rem;
-  color: var(--text-primary);
-  font-weight: 650;
   text-transform: capitalize;
 }
 
-.crawler-status[data-status="completed"] {
-  color: var(--status-success-text);
+@container tool-workspace (width < 34rem) {
+  .tool-card-compact .crawler-heading > :is(.crawler-stack, .crawler-meta) {
+    flex-basis: 100%;
+  }
+
+  .crawler-inline-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .crawler-folder-button {
+    justify-self: start;
+  }
 }
