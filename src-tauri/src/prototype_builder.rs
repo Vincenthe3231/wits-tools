@@ -165,6 +165,7 @@ pub(crate) async fn prototype_save(
     app: AppHandle,
     variant: storage::Variant,
 ) -> Result<Uuid, Error> {
+    variant.require_canvas()?;
     storage::save(&storage::directory(&app)?, variant)
 }
 

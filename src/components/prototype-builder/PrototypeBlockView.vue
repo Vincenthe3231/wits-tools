@@ -29,6 +29,14 @@ defineProps<{ block: PrototypeBlock; interactive?: boolean }>();
   line-height: 1.2;
 }
 
+/* Let all content wrap when a freeform node becomes narrow. */
+.prototype-heading,
+.prototype-text,
+.prototype-card,
+.prototype-button {
+  overflow-wrap: anywhere;
+}
+
 .prototype-text,
 .prototype-card p {
   white-space: pre-wrap;
@@ -36,6 +44,7 @@ defineProps<{ block: PrototypeBlock; interactive?: boolean }>();
 
 .prototype-card {
   display: grid;
+  align-content: start;
   gap: 0.35rem;
   padding: 0.85rem;
   border-radius: 0.85rem;
@@ -49,7 +58,7 @@ defineProps<{ block: PrototypeBlock; interactive?: boolean }>();
 .prototype-button:disabled {
   min-height: 44px;
   max-width: 100%;
-  width: fit-content;
+  width: 100%;
   padding-inline: 1rem;
   border-radius: 1.5rem;
   background: var(--accent-strong);

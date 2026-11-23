@@ -29,7 +29,13 @@ export type SignInBlock = {
 };
 
 export type BlockKind = PrototypeBlock["kind"];
-export type PrototypeDocument = { version: 2; blocks: PrototypeBlock[] };
+export type LinearDocument = { version: 2; blocks: PrototypeBlock[] };
+
+// Geometry uses document pixels. Node order defines stacking from back to front.
+export type ScreenSize = { width: number; height: number };
+export type CanvasNode = { block: PrototypeBlock; x: number; y: number; width: number; height?: number };
+export type NodeGeometry = Partial<Omit<CanvasNode, "block">>;
+export type PrototypeDocument = { version: 3; screen: ScreenSize; nodes: CanvasNode[] };
 
 // A blank project has no upstream source, while older saves still carry a starter.
 export type Variant = {
@@ -40,7 +46,7 @@ export type Variant = {
 };
 
 export type SavedVariant =
-  | (Variant & { id: string })
+  | (Omit<Variant, "document"> & { id: string; document: PrototypeDocument | LinearDocument })
   | (ImportedStarter & { id: string; name: string });
 
 // Keep command names and payloads at the IPC boundary.

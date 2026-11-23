@@ -1,25 +1,20 @@
-<!-- Composes a prototype on a vertical canvas and keeps preview and project actions together. -->
+<!-- Coordinates the freeform workspace, its inspector, and project actions. -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onScopeDispose, ref } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
 
-import type { BlockKind, PrototypeBlock, SavedVariant } from "../../api/prototype-builder";
-import PrototypeBlockActions from "../../components/prototype-builder/PrototypeBlockActions.vue";
+import type { BlockKind, CanvasNode, LinearDocument, NodeGeometry, SavedVariant } from "../../api/prototype-builder";
+import PrototypeCanvas from "../../components/prototype-builder/PrototypeCanvas.vue";
 import PrototypeBlockProperties from "../../components/prototype-builder/PrototypeBlockProperties.vue";
 import PrototypeBlockView from "../../components/prototype-builder/PrototypeBlockView.vue";
 import { usePrototypeBuilder } from "../../composables/prototype-builder/use-prototype-builder";
-import { usePrototypeDrag } from "../../composables/prototype-builder/use-prototype-drag";
 import { createBlock } from "../../utils/prototype-builder/document";
+import { blockWidth, coordinate, layerNodes, MAX_COORDINATE, MAX_DIMENSION, MIN_COORDINATE, stackCanvas, type Point } from "../../utils/prototype-builder/geometry";
 
 type CloseChoice = "save" | "discard" | "cancel";
 
-// Keep editor selection and gesture state separate from the persisted document.
-const {
-  source, draft, variants, busy, loading, importError, saveError, listError, dirty,
-  importStarter, openSample, load, open, save, newPrototype, insertBlock, moveBlock,
-  updateBlock, removeBlock, renameDraft,
-} = usePrototypeBuilder();
+// Keep viewport state and measurement separate from the saved document.
 const palette = [
   { kind: "heading", label: "Heading" },
   { kind: "text", label: "Text" },
@@ -27,90 +22,94 @@ const palette = [
   { kind: "button", label: "Button" },
   { kind: "signIn", label: "Sign-in card" },
 ] as const;
-const canvas = ref<HTMLElement | null>(null);
-const previewBack = ref<HTMLButtonElement | null>(null);
+const canvas = ref<InstanceType<typeof PrototypeCanvas>>();
+const previewBack = ref<HTMLButtonElement>();
 const selectedId = ref<string | null>(null);
 const preview = ref(false);
-const announcement = ref("");
-const blocks = computed(() => draft.value?.document.blocks ?? []);
-const selectedBlock = computed(() => blocks.value.find((block) => block.id === selectedId.value));
+const draftKey = ref(0);
+const measuring = ref<LinearDocument>();
+const measureHost = ref<HTMLElement>();
 
-// Use the rendered canvas order for both new insertions and existing-block moves.
-const { beginDrag, cancelDrag, activeDrag, insertionTop } = usePrototypeDrag({
-  canvas,
-  onDrop(source, slot) {
-    if (busy.value || preview.value) return;
-    if (source.kind === "palette") {
-      addBlock(source.blockKind, slot, true);
-      return;
-    }
-
-    const sourceIndex = blocks.value.findIndex((block) => block.id === source.id);
-    if (sourceIndex >= 0) moveTo(source.id, slot > sourceIndex ? slot - 1 : slot, true);
-  },
-});
-
-const dragBlock = computed(() => {
-  const source = activeDrag.value?.source;
-  if (!source) return undefined;
-  return source.kind === "palette"
-    ? createBlock(source.blockKind, "drag-preview")
-    : blocks.value.find((block) => block.id === source.id);
-});
-
-// Keep pointer drops in view while letting keyboard actions scroll to the focused block.
-function focusBlock(id: string, preventScroll = false) {
-  void nextTick(() => {
-    const rows = canvas.value?.querySelectorAll<HTMLElement>("[data-prototype-block]");
-    const row = Array.from(rows ?? []).find((entry) => entry.dataset.prototypeBlock === id);
-    row?.querySelector<HTMLButtonElement>("[data-prototype-select]")?.focus({ preventScroll });
-  });
-}
-
-function blockLabel(block: PrototypeBlock) {
-  switch (block.kind) {
-    case "heading": return "Heading";
-    case "text": return "Text";
-    case "card": return "Card";
-    case "button": return "Button";
-    case "signIn": return "Sign-in card";
+async function convert(document: LinearDocument) {
+  measuring.value = document;
+  try {
+    await nextTick();
+    const rows = Array.from(measureHost.value?.children ?? [], (element) => (element as HTMLElement).offsetHeight);
+    return stackCanvas(document, rows);
+  } finally {
+    measuring.value = undefined;
   }
 }
 
-function blockName(block: PrototypeBlock) {
-  switch (block.kind) {
-    case "heading":
-    case "text": return block.text.trim() || blockLabel(block);
-    case "card":
-    case "signIn": return block.title.trim() || blockLabel(block);
-    case "button": return block.label.trim() || "Button";
+const {
+  source, draft, variants, busy, loading, importError, saveError, listError, dirty,
+  importStarter, openSample, load, open, save, newPrototype, changeDocument, updateBlock,
+  renameDraft, finishField, travel, canUndo, canRedo,
+} = usePrototypeBuilder(convert);
+const nodes = computed(() => draft.value?.document.nodes ?? []);
+const layers = computed(() => [...nodes.value].reverse());
+const selectedNode = computed(() => nodes.value.find((node) => node.block.id === selectedId.value));
+const layerActions = [
+  { action: "front", label: "Bring to front" },
+  { action: "raise", label: "Raise" },
+  { action: "lower", label: "Lower" },
+  { action: "back", label: "Send to back" },
+] as const;
+
+// Pointer and inspector changes go through the same history path.
+function insertNode(kind: BlockKind, point: Point) {
+  const id = crypto.randomUUID();
+  const node = { block: createBlock(kind, id), x: coordinate(point.x), y: coordinate(point.y), width: blockWidth(kind) };
+  changeDocument((document) => ({ ...document, nodes: [...document.nodes, node] }));
+  selectedId.value = id;
+}
+
+function moveNode(id: string, geometry: NodeGeometry) {
+  changeDocument((document) => ({
+    ...document,
+    nodes: document.nodes.map((node) => node.block.id === id ? { ...node, ...geometry } : node),
+  }));
+}
+
+function changeGeometry(event: Event, node: CanvasNode, field: keyof NodeGeometry) {
+  const input = event.target as HTMLInputElement;
+  if (!input.validity.valid) {
+    input.value = String(node[field] ?? "");
+    return;
   }
+  moveNode(node.block.id, { [field]: input.value === "" ? undefined : input.valueAsNumber });
 }
 
-function addBlock(kind: BlockKind, index?: number, preventScroll = false) {
-  const id = insertBlock(kind, index);
-  if (!id) return;
-  selectedId.value = id;
-  const label = palette.find((entry) => entry.kind === kind)?.label;
-  announcement.value = `Added ${label} at position ${(index ?? blocks.value.length - 1) + 1}.`;
-  focusBlock(id, preventScroll);
-}
-
-function moveTo(id: string, index: number, preventScroll = false) {
-  if (!moveBlock(id, index)) return;
-  selectedId.value = id;
-  announcement.value = `Moved block to position ${index + 1} of ${blocks.value.length}.`;
-  focusBlock(id, preventScroll);
+function changeScreen(event: Event, field: "width" | "height") {
+  const input = event.target as HTMLInputElement;
+  if (!input.validity.valid) {
+    input.value = String(draft.value?.document.screen[field]);
+    return;
+  }
+  changeDocument((document) => ({ ...document, screen: { ...document.screen, [field]: input.valueAsNumber } }));
 }
 
 function removeSelected(id: string) {
-  const index = blocks.value.findIndex((block) => block.id === id);
-  if (!removeBlock(id)) return;
-  const next = blocks.value[Math.min(index, blocks.value.length - 1)];
-  selectedId.value = next?.id ?? null;
-  announcement.value = "Block removed.";
-  if (next) focusBlock(next.id);
-  else void nextTick(() => canvas.value?.focus());
+  changeDocument((document) => ({ ...document, nodes: document.nodes.filter((node) => node.block.id !== id) }));
+  selectedId.value = null;
+  canvas.value?.focus();
+}
+
+function order(action: typeof layerActions[number]["action"]) {
+  const id = selectedId.value;
+  if (id) changeDocument((document) => ({ ...document, nodes: layerNodes(document.nodes, id, action) }));
+}
+
+function history(redo = false) {
+  canvas.value?.cancel();
+  travel(redo);
+  if (!selectedNode.value) selectedId.value = null;
+}
+
+function layerName(node: CanvasNode) {
+  const block = node.block;
+  const copy = "title" in block ? block.title : "text" in block ? block.text : block.label;
+  return copy.trim() || palette.find(({ kind }) => kind === block.kind)?.label;
 }
 
 // Keep dirty drafts intact until the user confirms a replacement or route change.
@@ -127,7 +126,8 @@ function answerReplacement(confirmed: boolean) {
 
 function mayReplace(): boolean | Promise<boolean> {
   if (busy.value || confirmOpen.value) return false;
-  cancelDrag();
+  canvas.value?.cancel();
+  finishField();
   if (!dirty.value) return true;
 
   const focused = document.activeElement;
@@ -153,7 +153,7 @@ onMounted(load);
 function enterDraft() {
   preview.value = false;
   selectedId.value = null;
-  announcement.value = "";
+  draftKey.value++;
   void nextTick(() => canvas.value?.focus());
 }
 
@@ -170,29 +170,28 @@ async function requestImport() {
 
 async function requestSample() {
   if (!(await mayReplace())) return;
-  openSample();
-  enterDraft();
+  if (await openSample()) enterDraft();
 }
 
 async function requestOpen(variant: SavedVariant) {
   if (!(await mayReplace())) return;
-  open(variant);
-  enterDraft();
+  if (await open(variant)) enterDraft();
 }
 
 // Switch surfaces without changing the document or retaining a drag gesture.
 function togglePreview() {
-  cancelDrag();
+  canvas.value?.cancel();
+  finishField();
   preview.value = !preview.value;
   if (preview.value) void nextTick(() => previewBack.value?.focus());
-  else if (selectedId.value) focusBlock(selectedId.value);
   else void nextTick(() => canvas.value?.focus());
 }
 
 // The shell owns the native close listener and delegates the active draft decision.
 async function requestClose(askClose: () => Promise<CloseChoice>) {
   if (busy.value || confirmOpen.value) return false;
-  cancelDrag();
+  canvas.value?.cancel();
+  finishField();
   if (!dirty.value) return true;
 
   const decision = await askClose();
@@ -207,20 +206,16 @@ defineExpose({ requestClose });
 </script>
 
 <template>
-  <div class="builder tool-workspace">
-    <!-- A separate preview surface contains only authored content and an exit control. -->
+  <div class="builder tool-workspace" @focusout="finishField">
+    <!-- The hidden editor retains its camera while Preview uses fresh form controls. -->
     <section v-if="preview && draft" class="panel preview-mode" aria-label="Prototype preview">
       <button ref="previewBack" class="builder-button" type="button" @click="togglePreview">
         Back to editor
       </button>
-      <div class="preview-screen">
-        <p v-if="!blocks.length" class="muted">This screen is empty.</p>
-        <PrototypeBlockView v-for="block in blocks" :key="block.id" :block="block" interactive />
-      </div>
+      <PrototypeCanvas :document="draft.document" preview />
     </section>
 
-    <template v-else>
-      <!-- Keep project entry points together and errors beside the import action. -->
+    <div v-show="!preview" class="editor-content">      <!-- Keep project entry points together and errors beside the import action. -->
       <section class="panel">
         <div class="controls">
           <button class="builder-button primary-button" type="button" :disabled="busy" @click="requestNew">
@@ -249,96 +244,117 @@ defineExpose({ requestClose });
 
       <!-- Both the palette and existing canvas blocks feed the same insertion slots. -->
       <template v-if="draft">
+        <!-- The palette and layer list leave the workspace free for direct manipulation. -->
+        <section class="panel palette">
+          <h2>Components</h2>
+          <ul class="palette-items">
+            <li v-for="item in palette" :key="item.kind" class="palette-item">
+              <span class="drag-handle" @pointerdown="canvas?.startPalette($event, item.kind)">
+                <span aria-hidden="true">⠿</span> {{ item.label }}
+              </span>
+              <button
+                class="builder-button"
+                type="button"
+                :aria-label="'Add ' + item.label"
+                :disabled="busy"
+                @click="canvas?.add(item.kind)"
+              >Add</button>
+            </li>
+          </ul>
+        </section>
+
         <div class="editor-grid">
-          <section class="panel palette">
-            <h2>Components</h2>
-            <ul class="palette-items">
-              <li v-for="item in palette" :key="item.kind" class="palette-item">
-                <span
-                  class="drag-handle palette-handle"
-                  @pointerdown="!busy && beginDrag($event, { kind: 'palette', blockKind: item.kind, label: item.label })"
-                >
-                  <span class="grip" aria-hidden="true">⠿</span>
-                  {{ item.label }}
-                </span>
-                <button
-                  class="builder-button"
-                  type="button"
-                  :aria-label="'Add ' + item.label"
-                  :disabled="busy"
-                  @click="addBlock(item.kind)"
-                >Add</button>
-              </li>
-            </ul>
-          </section>
-
           <section class="panel canvas-panel">
-            <div class="section-title">
-              <h2 id="prototype-canvas-title">Canvas</h2>
-              <button class="builder-button" type="button" :disabled="busy" @click="togglePreview">
-                Preview
-              </button>
+            <div class="controls">
+              <button class="builder-button" type="button" :disabled="busy || !canUndo" @click="history()">Undo</button>
+              <button class="builder-button" type="button" :disabled="busy || !canRedo" @click="history(true)">Redo</button>
+              <button class="builder-button primary-button" type="button" :disabled="busy" @click="togglePreview">Preview</button>
             </div>
-            <p class="sr-only" role="status">{{ announcement }}</p>
-            <div ref="canvas" class="canvas" role="region" aria-labelledby="prototype-canvas-title" tabindex="-1">
-              <p v-if="!blocks.length" class="empty-canvas muted">Drag a component here or click Add.</p>
-              <ol v-else class="canvas-blocks">
-                <li
-                  v-for="(block, index) in blocks"
-                  :key="block.id"
-                  :data-prototype-block="block.id"
-                  class="canvas-block"
-                  :class="{ 'source-block': activeDrag?.source.kind === 'block' && activeDrag.source.id === block.id }"
-                >
-                  <div class="block-controls">
-                    <span
-                      class="drag-handle block-grip"
-                      aria-hidden="true"
-                      @pointerdown="!busy && beginDrag($event, { kind: 'block', id: block.id, label: blockLabel(block) })"
-                    >⠿</span>
-                    <button
-                      class="builder-button block-select"
-                      data-prototype-select
-                      type="button"
-                      :aria-label="'Select ' + blockLabel(block) + ' at position ' + (index + 1) + ': ' + blockName(block)"
-                      :aria-pressed="selectedId === block.id"
-                      :disabled="busy"
-                      @click="selectedId = block.id"
-                    >{{ blockLabel(block) }}</button>
-                    <PrototypeBlockActions
-                      :position="index + 1"
-                      :count="blocks.length"
-                      :label="blockName(block)"
-                      :disabled="busy"
-                      @move="moveTo(block.id, $event)"
-                    />
-                  </div>
-                  <PrototypeBlockView :block="block" />
-                </li>
-              </ol>
-              <div
-                v-if="insertionTop !== null"
-                class="insertion-line"
-                aria-hidden="true"
-                :style="{ top: insertionTop + 'px' }"
-              />
-            </div>
-          </section>
-
-          <section class="panel inspector">
-            <h2>Properties</h2>
-            <PrototypeBlockProperties
-              v-if="selectedBlock"
-              :key="selectedBlock.id"
-              :block="selectedBlock"
+            <PrototypeCanvas
+              :key="draftKey"
+              ref="canvas"
+              :document="draft.document"
+              :selected-id="selectedId"
               :disabled="busy"
-              @update="updateBlock"
-              @remove="removeSelected"
+              @select="selectedId = $event"
+              @insert="insertNode"
+              @move="moveNode"
+              @history="history"
             />
-            <p v-else class="muted">Select a block to edit its properties.</p>
           </section>
-        </div>
 
+          <aside class="inspector">
+            <section class="panel">
+              <h2>Layers</h2>
+              <p v-if="!layers.length" class="muted">Add a component to start.</p>
+              <ul v-else class="layer-list">
+                <li v-for="node in layers" :key="node.block.id">
+                  <button
+                    type="button"
+                    :aria-pressed="selectedId === node.block.id"
+                    :disabled="busy"
+                    @click="selectedId = node.block.id"
+                  >{{ layerName(node) }}</button>
+                </li>
+              </ul>
+              <div v-if="selectedNode" class="controls">
+                <button
+                  v-for="{ action, label } in layerActions"
+                  :key="action"
+                  type="button"
+                  class="builder-button"
+                  :disabled="busy"
+                  @click="order(action)"
+                >{{ label }}</button>
+              </div>
+            </section>
+            <section class="panel">
+              <h2>Properties</h2>
+              <fieldset class="geometry-fields" :disabled="busy">
+                <legend>Screen</legend>
+                <label v-for="field in (['width', 'height'] as const)" :key="field" class="field">
+                  {{ field === "width" ? "Screen width" : "Screen height" }}
+                  <input type="number" required min="1" :max="MAX_DIMENSION" :value="draft.document.screen[field]" @change="changeScreen($event, field)" />
+                </label>
+              </fieldset>
+              <template v-if="selectedNode">
+                <fieldset class="geometry-fields" :key="selectedNode.block.id" :disabled="busy">
+                  <legend>Component</legend>
+                  <label v-for="field in (['x', 'y', 'width'] as const)" :key="field" class="field">
+                    {{ field === "width" ? "Component width" : field.toUpperCase() }}
+                    <input
+                      type="number"
+                      required
+                      :min="field === 'width' ? 1 : MIN_COORDINATE"
+                      :max="field === 'width' ? MAX_DIMENSION : MAX_COORDINATE"
+                      :value="selectedNode[field]"
+                      @change="changeGeometry($event, selectedNode, field)"
+                    />
+                  </label>
+                  <!-- Clearing minimum height returns the component to automatic sizing. -->
+                  <label class="field">
+                    Minimum height
+                    <input
+                      type="number"
+                      min="1"
+                      :max="MAX_DIMENSION"
+                      :value="selectedNode.height ?? ''"
+                      placeholder="Auto"
+                      @change="changeGeometry($event, selectedNode, 'height')"
+                    />
+                  </label>
+                </fieldset>
+                <PrototypeBlockProperties
+                  :key="selectedNode.block.id"
+                  :block="selectedNode.block"
+                  :disabled="busy"
+                  @update="updateBlock"
+                  @remove="removeSelected"
+                />
+              </template>
+            </section>
+          </aside>
+        </div>
         <!-- Explicit saves keep unsaved draft content local to the editor. -->
         <section class="panel">
           <form class="field" @submit.prevent="save()">
@@ -383,23 +399,19 @@ defineExpose({ requestClose });
           </li>
         </ul>
       </section>
-    </template>
+    </div>
 
-    <!-- Keep the drag image out of hit testing and workspace clipping. -->
-    <Teleport to="body">
+    <!-- Measure legacy content at real document widths before replacing the draft. -->
+    <div v-if="measuring" ref="measureHost" class="measurement tool-workspace" aria-hidden="true" inert>
       <div
-        v-if="activeDrag && dragBlock"
-        class="drag-image"
-        aria-hidden="true"
-        :style="{
-          left: 'clamp(8px, ' + (activeDrag.x + 12) + 'px, calc(100vw - min(16rem, 50vw) - 8px))',
-          top: 'min(' + (activeDrag.y + 12) + 'px, calc(100vh - 5rem))',
-        }"
+        v-for="block in measuring.blocks"
+        :key="block.id"
+        class="prototype-node-content"
+        :style="{ width: blockWidth(block.kind) + 'px' }"
       >
-        <PrototypeBlockView :block="dragBlock" />
+        <PrototypeBlockView :block="block" />
       </div>
-    </Teleport>
-
+    </div>
     <!-- Escape and outside dismissal cancel the pending replacement. -->
     <DialogRoot :open="confirmOpen" @update:open="!$event && answerReplacement(false)">
       <DialogPortal>
@@ -418,126 +430,103 @@ defineExpose({ requestClose });
 </template>
 
 <style scoped>
-/* Use the shared tool surfaces and size the editor against the workspace width. */
-.builder {
-  display: grid;
-  gap: 1rem;
-  min-width: 0;
-  padding: 1rem;
-  overflow-wrap: anywhere;
-}
-
+/* Give the canvas room to work and keep supporting panels readable at narrow widths. */
+.builder,
+.editor-content,
 .panel,
 .field,
-.palette-items,
-.canvas-blocks,
-.saved-variants,
-.preview-screen {
+.inspector,
+.layer-list,
+.saved-variants {
   display: grid;
   min-width: 0;
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 
 .panel {
-  padding: 1rem;
-  border-radius: var(--tool-card-radius);
-  background: var(--tool-card-surface);
-  box-shadow: var(--tool-card-shadow);
+  padding: 0.8rem;
+  border-radius: 0.85rem;
+  background: var(--surface-editor);
 }
 
 .editor-grid {
   display: grid;
-  align-items: start;
-  gap: 1rem;
   min-width: 0;
+  align-items: start;
+  gap: 0.75rem;
 }
 
-.palette-items {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
-}
-
-@container tool-workspace (min-width: 32rem) {
+@container tool-workspace (min-width: 47rem) {
   .editor-grid {
-    grid-template-columns: minmax(10rem, 0.75fr) minmax(0, 2fr);
-    align-items: start;
-  }
-
-  .palette-items {
-    grid-template-columns: 1fr;
-  }
-
-  .canvas-panel {
-    grid-row: span 2;
-  }
-
-  .inspector {
-    grid-column: 1;
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem);
   }
 }
 
-@container tool-workspace (min-width: 65rem) {
-  .editor-grid {
-    grid-template-columns: minmax(10rem, 0.8fr) minmax(0, 2.4fr) minmax(13rem, 1fr);
-  }
-
-  .canvas-panel {
-    grid-row: auto;
-  }
-
-  .inspector {
-    grid-column: auto;
-  }
-
-  /* Keep insertion and property controls reachable while a long canvas scrolls. */
-  .palette,
-  .inspector {
-    position: sticky;
-    top: 1rem;
-  }
-}
-
-/* Keep navigation and editing controls easy to target in either appearance. */
 .controls,
-.section-title,
+.palette-items,
 .palette-item,
-.block-controls,
 .saved-variant {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
-  min-width: 0;
 }
 
-.section-title,
-.palette-item,
 .saved-variant {
   justify-content: space-between;
 }
 
+.palette-item {
+  padding-inline: 0.4rem;
+  border-radius: 0.75rem;
+  background: var(--surface-toolbar);
+}
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 0.4rem;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+/* Use the same field and focus treatment as the rest of the tool. */
 .panel h2,
-.field label {
+.geometry-fields legend {
   font-weight: 650;
+}
+
+.geometry-fields {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.layer-list button {
+  width: 100%;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+  text-align: start;
 }
 
 .field input,
 .builder-button {
   min-height: 44px;
-  padding-inline: 0.85rem;
-  border: 1px solid var(--text-muted);
+  padding-inline: 0.75rem;
   border-radius: var(--tool-field-radius);
 }
 
 .field input {
-  flex: 1 1 15rem;
-  min-width: 0;
   width: 100%;
+  min-width: 0;
+  border: 1px solid var(--text-muted);
   background: var(--surface-editor);
 }
 
-.builder-button {
-  width: fit-content;
-  max-width: 100%;
+.field .controls input {
+  flex: 1 1 14rem;
 }
 
 .muted {
@@ -545,105 +534,23 @@ defineExpose({ requestClose });
   font-size: 0.875rem;
 }
 
-/* Use an in-flow canvas and show the drop marker without moving the block rows. */
-.canvas {
-  position: relative;
-  min-height: 10rem;
-  padding: 0.75rem;
-  border: 1px solid var(--text-muted);
-  border-radius: 0.85rem;
-  background: var(--surface-editor);
+/* Reserve the available height for the fitted screen and size old blocks offscreen. */
+.preview-mode {
+  grid-template-rows: auto minmax(0, 1fr);
+  height: max(13rem, calc(100dvh - 7rem));
 }
 
-.canvas:focus-visible {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: 2px;
+.preview-mode > button {
+  justify-self: start;
 }
 
-.empty-canvas {
-  display: grid;
-  place-items: center;
-  min-height: 8.5rem;
-  text-align: center;
-}
-
-.canvas-block {
-  display: grid;
-  gap: 0.55rem;
-  min-width: 0;
-  padding: 0.65rem;
-  border: 1px solid var(--text-muted);
-  border-radius: 0.8rem;
-}
-
-.canvas-block:has([aria-pressed="true"]) {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: -2px;
-}
-
-.drag-handle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 44px;
-  color: var(--text-primary);
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-
-.grip,
-.block-grip {
-  font-size: 1.2rem;
-}
-
-.block-grip {
-  justify-content: center;
-  width: 2rem;
-}
-
-.source-block {
-  opacity: 0.6;
-}
-
-.insertion-line {
-  position: absolute;
-  z-index: 1;
-  inset-inline: 0.5rem;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--accent-strong);
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.drag-image {
+.measurement {
   position: fixed;
-  z-index: 10;
-  width: min(16rem, 50vw);
-  max-height: 9rem;
-  overflow: hidden;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--accent-strong);
-  border-radius: 0.65rem;
-  background: var(--surface-editor);
-  color: var(--text-primary);
-  box-shadow: var(--tool-card-raised);
+  left: 0;
+  top: 0;
+  visibility: hidden;
   pointer-events: none;
 }
-
-/* Match the authored content canvas to a clean presentation surface. */
-.preview-screen {
-  max-width: 48rem;
-  width: 100%;
-  min-height: 10rem;
-  justify-self: center;
-  align-content: start;
-  padding: 1rem;
-  border-radius: 0.85rem;
-  background: var(--surface-editor);
-}
-
 .error {
   padding: 0.5rem;
   border: 1px solid var(--status-error-indicator);
@@ -673,10 +580,4 @@ defineExpose({ requestClose });
   transform: translate(-50%, -50%);
 }
 
-@media (forced-colors: active) {
-  .insertion-line {
-    background: Highlight;
-    forced-color-adjust: none;
-  }
-}
 </style>

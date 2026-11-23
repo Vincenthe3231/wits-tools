@@ -26,8 +26,9 @@ defineProps<{ block: SignInBlock; interactive?: boolean }>();
 /* Keep the card centered and let authored labels wrap on narrow canvases. */
 .sign-in-card {
   display: grid;
+  align-content: start;
   gap: 1rem;
-  width: min(100%, 25rem);
+  width: 100%;
   justify-self: center;
   padding: clamp(1rem, 5%, 1.75rem);
   border-radius: 1rem;

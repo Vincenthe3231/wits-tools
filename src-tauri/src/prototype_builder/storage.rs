@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use super::{Error, Starter, repository, validate};
 
-// Keep the version 2 snapshot envelope separate from the public version 1 starter.
+// Keep local snapshot metadata separate from the public version 1 starter.
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct Variant {
@@ -23,11 +23,56 @@ pub(crate) struct Variant {
     document: Document,
 }
 
+// Read both local versions without rewriting old files on open.
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum Document {
+    Canvas(CanvasDocument),
+    Linear(LinearDocument),
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct Document {
+struct LinearDocument {
     version: u8,
     blocks: Vec<Block>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CanvasDocument {
+    version: u8,
+    screen: Screen,
+    nodes: Vec<Node>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Screen {
+    width: u32,
+    height: u32,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Node {
+    block: Block,
+    x: i32,
+    y: i32,
+    width: u32,
+    // A missing height preserves intrinsic sizing in older v3 snapshots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    height: Option<u32>,
+}
+
+impl Variant {
+    // Only the new format can be written through the desktop command.
+    pub(super) fn require_canvas(&self) -> Result<(), Error> {
+        match self.document {
+            Document::Canvas(_) => Ok(()),
+            Document::Linear(_) => Err(Error::InvalidDocument),
+        }
+    }
 }
 
 // Typed, data-only blocks keep each component's editable fields explicit on disk.
@@ -92,10 +137,21 @@ impl StoredVariant {
 // Empty documents are valid. Required labels and unique IDs keep blocks selectable.
 fn validate_document(document: &Document) -> Result<(), Error> {
     let mut ids = HashSet::new();
-    if document.version != 2 {
-        return Err(Error::InvalidDocument);
-    }
-    for block in &document.blocks {
+    let blocks: Box<dyn Iterator<Item = &Block>> = match document {
+        Document::Linear(doc) if doc.version == 2 => Box::new(doc.blocks.iter()),
+        Document::Canvas(doc)
+            if doc.version == 3
+                && valid_dimension(doc.screen.width)
+                && valid_dimension(doc.screen.height)
+                && doc.nodes.iter().all(|node| {
+                    valid_dimension(node.width) && node.height.is_none_or(valid_dimension)
+                }) =>
+        {
+            Box::new(doc.nodes.iter().map(|node| &node.block))
+        }
+        _ => return Err(Error::InvalidDocument),
+    };
+    for block in blocks {
         let (id, has_required_content) = match block {
             Block::Heading { id, text } => (id, !text.trim().is_empty()),
             Block::Text { id, .. } => (id, true),
@@ -120,6 +176,11 @@ fn validate_document(document: &Document) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+// Cap dimensions within the DOM layout range used by the editor.
+fn valid_dimension(value: u32) -> bool {
+    (1..=1_000_000).contains(&value)
 }
 
 // Use the same app-owned location so existing variants remain visible.
@@ -291,5 +352,52 @@ mod tests {
 
         let variants = list(dir.path()).unwrap();
         assert_eq!(variants[0].sort_key(), ("Keep me", Some(id)));
+    }
+
+    // Keep geometry, back-to-front order, and older snapshots across independent saves.
+    #[test]
+    fn saves_canvas_geometry_and_rejects_invalid_replacements() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_id = save(dir.path(), make_variant(None, "Linear", json!([]))).unwrap();
+        let document = json!({
+            "version": 3,
+            "screen": { "width": 390, "height": 844 },
+            "nodes": [
+                { "x": -25, "y": 90, "width": 160,
+                  "block": { "id": "text", "kind": "text", "text": "Behind" } },
+                { "x": 10, "y": 90, "width": 320, "height": 380,
+                  "block": { "id": "form", "kind": "signIn", "title": "Welcome",
+                    "emailLabel": "Email", "passwordLabel": "Password", "buttonLabel": "Continue" } }
+            ]
+        });
+        let variant = |id, name, document| {
+            serde_json::from_value::<Variant>(json!({
+                "id": id, "name": name, "sourceUrl": null, "document": document
+            }))
+            .unwrap()
+        };
+        let original = variant(None, "Canvas", document.clone());
+        assert!(original.require_canvas().is_ok());
+        let id = save(dir.path(), original).unwrap();
+        let copy = save(dir.path(), variant(None, "Copy", document.clone())).unwrap();
+        assert_ne!(id, copy);
+        let mut invalid = document.clone();
+        invalid["nodes"][0]["width"] = json!(0);
+        assert!(matches!(
+            save(dir.path(), variant(Some(id), "Canvas", invalid)),
+            Err(Error::InvalidDocument)
+        ));
+        let saved = list(dir.path()).unwrap();
+        assert_eq!(saved[0].sort_key(), ("Canvas", Some(id)));
+        assert_eq!(saved[1].sort_key(), ("Copy", Some(copy)));
+        assert_eq!(saved[2].sort_key(), ("Linear", Some(old_id)));
+        assert_eq!(
+            serde_json::to_value(&saved[0]).unwrap()["document"],
+            document
+        );
+        assert_eq!(
+            serde_json::to_value(&saved[1]).unwrap()["document"],
+            document
+        );
     }
 }

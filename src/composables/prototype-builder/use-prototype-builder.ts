@@ -1,17 +1,19 @@
 /** Owns the active canvas and coordinates starter import and snapshot requests. */
-import { ref } from "vue";
+import { computed, ref, shallowRef } from "vue";
 
 import sample from "../../../examples/prototype-builder/wits-starter.json";
 import {
   prototypeBuilder,
-  type BlockKind,
+  type LinearDocument,
+  type PrototypeDocument,
   type ImportedStarter,
   type PrototypeBlock,
   type SavedVariant,
   type Variant,
 } from "../../api/prototype-builder";
 import { notify } from "../use-notifications";
-import { createBlock, fromStarter, insert, openVariant, remove, reorder, update } from "../../utils/prototype-builder/document";
+import { fromStarter, openVariant } from "../../utils/prototype-builder/document";
+import { emptyCanvas } from "../../utils/prototype-builder/geometry";
 
 // Map native codes to recovery steps the user can take in the workspace.
 const messages: Record<string, string> = {
@@ -24,7 +26,7 @@ const messages: Record<string, string> = {
   storageUnavailable: "Check that WITS can access its app data folder and retry.",
 };
 
-export function usePrototypeBuilder() {
+export function usePrototypeBuilder(convert: (document: LinearDocument) => Promise<PrototypeDocument>) {
   // Track each request separately so failures stay beside the action that owns them.
   const source = ref("");
   const draft = ref<Variant | null>(null);
@@ -34,7 +36,13 @@ export function usePrototypeBuilder() {
   const importError = ref("");
   const saveError = ref("");
   const listError = ref("");
-  const dirty = ref(false);
+  // Store immutable draft snapshots so ending a gesture produces a single undo step.
+  const past = ref<Variant[]>([]);
+  const future = ref<Variant[]>([]);
+  const checkpoint = ref<string | null>(null);
+  const fieldStart = shallowRef<Variant>();
+  const fingerprint = (variant: Variant) => JSON.stringify([variant.name.trim(), variant.document]);
+  const dirty = computed(() => !!draft.value && fingerprint(draft.value) !== checkpoint.value);
   let listRequest = 0;
 
   // Show only known action messages, keeping native diagnostics out of the UI.
@@ -48,17 +56,21 @@ export function usePrototypeBuilder() {
   function setDraft(variant: Variant, unsaved: boolean) {
     draft.value = variant;
     saveError.value = "";
-    dirty.value = unsaved;
+    checkpoint.value = unsaved ? null : fingerprint(variant);
+    past.value = [];
+    future.value = [];
+    fieldStart.value = undefined;
   }
 
-  function startDraft({ sourceUrl, starter }: ImportedStarter) {
-    setDraft({ sourceUrl, id: null, name: starter.title, document: fromStarter(starter) }, true);
+  async function startDraft({ sourceUrl, starter }: ImportedStarter) {
+    const document = await convert(fromStarter(starter));
+    setDraft({ sourceUrl, id: null, name: starter.title, document }, true);
   }
 
   // Start blank with a usable default name and no GitHub source.
   function newPrototype() {
     importError.value = "";
-    setDraft({ id: null, name: "Untitled prototype", sourceUrl: null, document: { version: 2, blocks: [] } }, false);
+    setDraft({ id: null, name: "Untitled prototype", sourceUrl: null, document: emptyCanvas() }, false);
   }
 
   async function importStarter() {
@@ -66,7 +78,7 @@ export function usePrototypeBuilder() {
     busy.value = true;
     importError.value = "";
     try {
-      startDraft(await prototypeBuilder.import(source.value));
+      await startDraft(await prototypeBuilder.import(source.value));
       return true;
     } catch (error) {
       importError.value = message(error, "Try importing the starter again.");
@@ -77,12 +89,21 @@ export function usePrototypeBuilder() {
   }
 
   // Use the same licensed fixture as GitHub import, with no network dependency.
-  function openSample() {
+  async function openSample() {
     importError.value = "";
-    startDraft({
-      sourceUrl: "https://github.com/Vincenthe3231/wits-tools",
-      starter: { ...sample, version: 1 },
-    });
+    busy.value = true;
+    try {
+      await startDraft({
+        sourceUrl: "https://github.com/Vincenthe3231/wits-tools",
+        starter: { ...sample, version: 1 },
+      });
+      return true;
+    } catch {
+      importError.value = "Could not lay out the bundled sample. Try opening it again.";
+      return false;
+    } finally {
+      busy.value = false;
+    }
   }
 
   // Only the newest disk read can refresh the list, including after a concurrent save.
@@ -101,20 +122,33 @@ export function usePrototypeBuilder() {
   }
 
   // Convert legacy data in memory and leave the disk copy alone until Save.
-  function open(variant: SavedVariant) {
-    setDraft(openVariant(variant), false);
+  async function open(variant: SavedVariant) {
+    busy.value = true;
+    listError.value = "";
+    try {
+      const opened = openVariant(variant);
+      const document = opened.document.version === 3 ? opened.document : await convert(opened.document);
+      setDraft({ ...opened, document }, false);
+      return true;
+    } catch {
+      listError.value = "Could not lay out this variant. Reload saved variants to try again.";
+      return false;
+    } finally {
+      busy.value = false;
+    }
   }
 
   // Duplicate explicitly so Save on an existing draft updates its own snapshot.
   async function save(copy = false) {
     if (!draft.value || busy.value) return false;
+    finishField();
     const snapshot = { ...draft.value, name: draft.value.name.trim() };
     busy.value = true;
     saveError.value = "";
     try {
       const id = await prototypeBuilder.save({ ...snapshot, id: copy ? null : snapshot.id });
       draft.value = { ...snapshot, id };
-      dirty.value = false;
+      checkpoint.value = fingerprint(snapshot);
       notify({ severity: "success", title: "Variant saved" });
       await load();
       return true;
@@ -126,46 +160,58 @@ export function usePrototypeBuilder() {
     }
   }
 
-  // Keep the editor and preview in sync and mark only successful edits as dirty.
-  function changeBlocks(transform: (blocks: PrototypeBlock[]) => PrototypeBlock[]) {
-    if (!draft.value || busy.value) return false;
-    const blocks = transform(draft.value.document.blocks);
-    if (blocks === draft.value.document.blocks) return false;
-    draft.value.document.blocks = blocks;
-    dirty.value = true;
-    saveError.value = "";
-    return true;
+  // Group live text changes until the field loses focus or another command runs.
+  function remember(before: Variant) {
+    if (!draft.value || fingerprint(before) === fingerprint(draft.value)) return;
+    past.value = [...past.value.slice(-99), before];
+    future.value = [];
   }
 
-  // One state API serves drag gestures, property inputs and accessible block actions.
-  function insertBlock(kind: BlockKind, index?: number) {
-    const id = crypto.randomUUID();
-    const added = changeBlocks((blocks) => insert(blocks, createBlock(kind, id), index ?? blocks.length));
-    return added ? id : undefined;
+  function finishField() {
+    if (!fieldStart.value) return;
+    remember(fieldStart.value);
+    fieldStart.value = undefined;
   }
 
-  function moveBlock(id: string, destination: number) {
-    return changeBlocks((blocks) => reorder(blocks, id, destination));
-  }
-
-  function updateBlock(block: PrototypeBlock) {
-    return changeBlocks((blocks) => update(blocks, block));
-  }
-
-  function removeBlock(id: string) {
-    return changeBlocks((blocks) => remove(blocks, id));
-  }
-
-  function renameDraft(name: string) {
-    if (!draft.value || busy.value || draft.value.name === name) return;
-    draft.value.name = name;
-    dirty.value = true;
+  function edit(change: (variant: Variant) => Variant, live = false) {
+    if (!draft.value || busy.value) return;
+    if (!live) finishField();
+    const before = draft.value;
+    const after = change(before);
+    if (live) fieldStart.value ??= before;
+    draft.value = after;
+    if (!live) remember(before);
     saveError.value = "";
   }
+
+  // The save identity belongs to the active draft even when undo crosses a save.
+  function travel(redo = false) {
+    if (!draft.value || busy.value) return;
+    finishField();
+    const from = redo ? future : past;
+    const to = redo ? past : future;
+    const snapshot = from.value.pop();
+    if (!snapshot) return;
+    to.value.push(draft.value);
+    draft.value = { ...snapshot, id: draft.value.id };
+    saveError.value = "";
+  }
+
+  const editingField = computed(() => !!fieldStart.value && !!draft.value
+    && fingerprint(fieldStart.value) !== fingerprint(draft.value));
+  const canUndo = computed(() => past.value.length > 0 || editingField.value);
+  const canRedo = computed(() => future.value.length > 0 && !editingField.value);
+  const changeDocument = (change: (document: PrototypeDocument) => PrototypeDocument, live = false) =>
+    edit((variant) => ({ ...variant, document: change(variant.document) }), live);
+  const updateBlock = (block: PrototypeBlock) => changeDocument((document) => ({
+    ...document,
+    nodes: document.nodes.map((node) => node.block.id === block.id ? { ...node, block } : node),
+  }), true);
+  const renameDraft = (name: string) => edit((variant) => ({ ...variant, name }), true);
 
   return {
     source, draft, variants, busy, loading, importError, saveError, listError, dirty,
     newPrototype, importStarter, openSample, load, open, save,
-    insertBlock, moveBlock, updateBlock, removeBlock, renameDraft,
+    changeDocument, updateBlock, renameDraft, finishField, travel, canUndo, canRedo,
   };
 }
