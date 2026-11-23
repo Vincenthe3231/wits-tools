@@ -1,9 +1,10 @@
 <!-- Renders the same prototype block in the canvas, preview, and drag image. -->
 <script setup lang="ts">
 import type { PrototypeBlock } from "../../api/prototype-builder";
+import PrototypeSignInCard from "./PrototypeSignInCard.vue";
 
 // Text interpolation keeps imported content as text throughout all views.
-defineProps<{ block: PrototypeBlock }>();
+defineProps<{ block: PrototypeBlock; interactive?: boolean }>();
 </script>
 
 <template>
@@ -14,6 +15,7 @@ defineProps<{ block: PrototypeBlock }>();
     <h3>{{ block.title }}</h3>
     <p>{{ block.body }}</p>
   </article>
+  <PrototypeSignInCard v-else-if="block.kind === 'signIn'" :block="block" :interactive="interactive" />
   <button v-else class="prototype-button" type="button" disabled>
     {{ block.label }}
   </button>

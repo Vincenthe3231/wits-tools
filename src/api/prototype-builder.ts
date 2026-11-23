@@ -15,7 +15,18 @@ export type PrototypeBlock =
   | { id: string; kind: "heading"; text: string }
   | { id: string; kind: "text"; text: string }
   | { id: string; kind: "card"; title: string; body: string }
-  | { id: string; kind: "button"; label: string };
+  | { id: string; kind: "button"; label: string }
+  | SignInBlock;
+
+// Store authored copy only. Preview input values belong to the rendered form.
+export type SignInBlock = {
+  id: string;
+  kind: "signIn";
+  title: string;
+  emailLabel: string;
+  passwordLabel: string;
+  buttonLabel: string;
+};
 
 export type BlockKind = PrototypeBlock["kind"];
 export type PrototypeDocument = { version: 2; blocks: PrototypeBlock[] };

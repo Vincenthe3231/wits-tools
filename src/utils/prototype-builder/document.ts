@@ -40,6 +40,15 @@ export function createBlock(kind: BlockKind, id: string): PrototypeBlock {
     case "text": return { id, kind, text: "Text" };
     case "card": return { id, kind, title: "Card title", body: "Card content" };
     case "button": return { id, kind, label: "Button" };
+    // Give the complete form usable copy as soon as it lands on the canvas.
+    case "signIn": return {
+      id,
+      kind,
+      title: "Welcome back",
+      emailLabel: "Email address",
+      passwordLabel: "Password",
+      buttonLabel: "Sign in",
+    };
   }
 }
 

@@ -30,6 +30,21 @@ function changeLabel(event: Event) {
     emit("update", { ...block, label: (event.target as HTMLInputElement).value });
   }
 }
+
+// Each field updates the existing block while preserving its ID and other copy.
+const signInFields = [
+  { field: "title", label: "Card title" },
+  { field: "emailLabel", label: "Email field label" },
+  { field: "passwordLabel", label: "Password field label" },
+  { field: "buttonLabel", label: "Submit button label" },
+] as const;
+
+function changeSignIn(field: typeof signInFields[number]["field"], event: Event) {
+  const block = props.block;
+  if (block.kind === "signIn") {
+    emit("update", { ...block, [field]: (event.target as HTMLInputElement).value });
+  }
+}
 </script>
 
 <template>
@@ -51,6 +66,13 @@ function changeLabel(event: Event) {
       <div>
         <label for="prototype-card-body">Card body</label>
         <textarea id="prototype-card-body" :value="block.body" rows="4" @input="changeCard('body', $event)" />
+      </div>
+    </template>
+    <!-- Keep authored labels in Properties and sample input in Preview. -->
+    <template v-else-if="block.kind === 'signIn'">
+      <div v-for="{ field, label } in signInFields" :key="field">
+        <label :for="'prototype-sign-in-' + field">{{ label }}</label>
+        <input :id="'prototype-sign-in-' + field" :value="block[field]" @input="changeSignIn(field, $event)" />
       </div>
     </template>
     <div v-else>

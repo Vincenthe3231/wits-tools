@@ -19,7 +19,7 @@ const messages: Record<string, string> = {
   missingStarter: "GitHub did not return examples/prototype-builder/wits-starter.json. Use a public repo with that file on its default branch, or open the bundled sample.",
   invalidStarter: "Check that the starter uses version 1 and has titled cards with unique IDs.",
   importUnavailable: "Check your connection and retry the import.",
-  invalidDocument: "Give every heading, card, and button a title or label, then try saving again.",
+  invalidDocument: "Fill in all heading text, card titles, sign-in field labels, and button labels, then try saving again.",
   invalidName: "Enter a name for this variant and retry.",
   storageUnavailable: "Check that WITS can access its app data folder and retry.",
 };

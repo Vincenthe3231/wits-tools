@@ -25,6 +25,7 @@ const palette = [
   { kind: "text", label: "Text" },
   { kind: "card", label: "Card" },
   { kind: "button", label: "Button" },
+  { kind: "signIn", label: "Sign-in card" },
 ] as const;
 const canvas = ref<HTMLElement | null>(null);
 const previewBack = ref<HTMLButtonElement | null>(null);
@@ -72,6 +73,7 @@ function blockLabel(block: PrototypeBlock) {
     case "text": return "Text";
     case "card": return "Card";
     case "button": return "Button";
+    case "signIn": return "Sign-in card";
   }
 }
 
@@ -79,7 +81,8 @@ function blockName(block: PrototypeBlock) {
   switch (block.kind) {
     case "heading":
     case "text": return block.text.trim() || blockLabel(block);
-    case "card": return block.title.trim() || "Card";
+    case "card":
+    case "signIn": return block.title.trim() || blockLabel(block);
     case "button": return block.label.trim() || "Button";
   }
 }
@@ -212,7 +215,7 @@ defineExpose({ requestClose });
       </button>
       <div class="preview-screen">
         <p v-if="!blocks.length" class="muted">This screen is empty.</p>
-        <PrototypeBlockView v-for="block in blocks" :key="block.id" :block="block" />
+        <PrototypeBlockView v-for="block in blocks" :key="block.id" :block="block" interactive />
       </div>
     </section>
 

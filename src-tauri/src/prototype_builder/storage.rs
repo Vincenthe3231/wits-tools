@@ -51,6 +51,15 @@ enum Block {
         id: String,
         label: String,
     },
+    // Match the field names sent by Vue and persist only authored copy.
+    #[serde(rename_all = "camelCase")]
+    SignIn {
+        id: String,
+        title: String,
+        email_label: String,
+        password_label: String,
+        button_label: String,
+    },
 }
 
 // Existing snapshots stay readable and retain their original shape until saved explicitly.
@@ -92,6 +101,19 @@ fn validate_document(document: &Document) -> Result<(), Error> {
             Block::Text { id, .. } => (id, true),
             Block::Card { id, title, .. } => (id, !title.trim().is_empty()),
             Block::Button { id, label } => (id, !label.trim().is_empty()),
+            // All visible titles and control labels must remain meaningful on reopen.
+            Block::SignIn {
+                id,
+                title,
+                email_label,
+                password_label,
+                button_label,
+            } => (
+                id,
+                [title, email_label, password_label, button_label]
+                    .iter()
+                    .all(|text| !text.trim().is_empty()),
+            ),
         };
         if id.trim().is_empty() || !ids.insert(id) || !has_required_content {
             return Err(Error::InvalidDocument);
@@ -220,12 +242,17 @@ mod tests {
             { "id": "heading", "kind": "heading", "text": "Release readiness" },
             { "id": "text", "kind": "text", "text": "Project status" },
             { "id": "card", "kind": "card", "title": "QA", "body": "Passed" },
-            { "id": "button", "kind": "button", "label": "See status" }
+            { "id": "button", "kind": "button", "label": "See status" },
+            { "id": "login", "kind": "signIn", "title": "Account access",
+              "emailLabel": "Work email", "passwordLabel": "Passphrase", "buttonLabel": "Continue" }
         ]);
         let first = save(dir.path(), make_variant(None, "First", blocks.clone())).unwrap();
         let second = save(dir.path(), make_variant(None, "Second", blocks.clone())).unwrap();
         let mut revised = blocks.clone();
         revised[0]["text"] = json!("Revised title");
+        // Save edited copy at a new position and verify both survive reopening.
+        revised[4]["buttonLabel"] = json!("Access workspace");
+        revised.as_array_mut().unwrap().swap(1, 4);
         assert_eq!(
             save(
                 dir.path(),
