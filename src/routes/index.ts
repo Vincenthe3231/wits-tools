@@ -21,5 +21,11 @@ export const router = createRouter({
       name: "crawler",
       component: () => import("../pages/crawler/CrawlerPage.vue"),
     },
+    // Open the general file downloader independently of the crawler.
+    {
+      path: "/tools/downloader",
+      name: "downloader",
+      component: () => import("../pages/downloader/DownloaderPage.vue"),
+    },
   ],
 });

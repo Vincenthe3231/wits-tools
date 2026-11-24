@@ -23,4 +23,12 @@ export const tools = [
     keywords: "website links scrape html proxy media download video hls dash",
     icon: "globe",
   },
+  // Make both direct links and page capture discoverable from the workspace.
+  {
+    routeName: "downloader",
+    name: "Downloader",
+    description: "Download files from direct URLs or capture them from a download page.",
+    keywords: "download file zip rar exe installer accelerate capture",
+    icon: "arrow",
+  },
 ] as const;

@@ -1,6 +1,8 @@
 //! Registers the native commands and plugins for the desktop workspace.
 mod api_tester;
 pub mod crawler;
+mod downloader;
+mod http_transfer;
 mod markdown_editor;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -31,15 +33,26 @@ pub fn run() {
         crawler::commands::crawler_open_capture_browser,
         crawler::commands::crawler_capture_browser_sources,
         crawler::commands::crawler_shutdown,
+        // Keep the file queue and browser handoff behind native commands.
+        downloader::downloader_status,
+        downloader::downloader_enqueue,
+        downloader::downloader_retry,
+        downloader::downloader_cancel,
+        downloader::downloader_reveal,
+        downloader::downloader_remove_history,
+        downloader::downloader_open_capture,
+        downloader::downloader_confirm_capture,
+        downloader::downloader_shutdown,
     ];
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(markdown_editor::EditorState::default())
         .manage(crawler::commands::DesktopState::default())
-        // External pages opened for media capture never receive application commands.
+        .manage(downloader::StateData::default())
+        // Only the workspace can invoke commands. Remote capture windows have no app IPC.
         .invoke_handler(move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
-            if invoke.message.webview().label() == crawler::capture_browser::LABEL {
+            if invoke.message.webview().label() != "main" {
                 invoke
                     .resolver
                     .reject("Application commands are unavailable in the capture browser.");

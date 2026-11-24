@@ -3,7 +3,7 @@
 use std::{path::Path, time::Duration};
 
 use reqwest::{Client, Response, header};
-use tokio::io::AsyncWriteExt;
+
 use url::Url;
 
 use super::{Error, Result};
@@ -68,30 +68,14 @@ pub(super) async fn limited(mut response: Response, limit: usize) -> Result<Vec<
     Ok(bytes)
 }
 
-/// Copy one complete response into a reserved temporary file and verify any advertised length.
-pub(super) async fn save(
-    mut response: Response,
-    path: &Path,
-    progress: impl Fn(u64),
-) -> Result<u64> {
-    if !response.status().is_success() {
-        return Err(Error::Network);
-    }
-    let expected = response.content_length();
-    let mut target = tokio::fs::File::create(path)
+// Preserve Crawler's error codes while using the shared streaming implementation.
+pub(super) async fn save(response: Response, path: &Path, progress: impl Fn(u64)) -> Result<u64> {
+    crate::http_transfer::save(response, path, progress)
         .await
-        .map_err(|_| Error::File)?;
-    let mut count = 0;
-    while let Some(chunk) = response.chunk().await.map_err(|_| Error::Network)? {
-        target.write_all(&chunk).await.map_err(|_| Error::File)?;
-        count += chunk.len() as u64;
-        progress(count);
-    }
-    if expected.is_some_and(|expected| expected != count) {
-        return Err(Error::Network);
-    }
-    target.sync_all().await.map_err(|_| Error::File)?;
-    Ok(count)
+        .map_err(|error| match error {
+            crate::http_transfer::BodyError::File => Error::File,
+            crate::http_transfer::BodyError::Network => Error::Network,
+        })
 }
 
 /// Copy only request context required for replay, excluding hop-by-hop and managed headers.

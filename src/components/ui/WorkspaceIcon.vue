@@ -2,7 +2,7 @@
 <script setup lang="ts">
 // Icons inherit the label and color of the control or surface around them.
 defineProps<{
-  name: "brand" | "home" | "document" | "search" | "arrow" | "sun" | "theme" | "sidebar" | "globe";
+  name: "brand" | "home" | "document" | "search" | "arrow" | "sun" | "theme" | "sidebar" | "globe" | "trash";
 }>();
 </script>
 
@@ -28,6 +28,7 @@ defineProps<{
       d="M20 20l-4.25-4.25M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"
     />
     <path v-else-if="name === 'arrow'" d="M5 12h14m-6-6 6 6-6 6" />
+    <path v-else-if="name === 'trash'" d="M4 7h16m-14 0 1 13h10l1-13M9 7V4h6v3m-5 3v7m4-7v7" />
     <!-- Use the shared outline style for the Crawler shortcut. -->
     <path
       v-else-if="name === 'globe'"

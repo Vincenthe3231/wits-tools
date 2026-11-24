@@ -4,10 +4,11 @@ import { computed, nextTick, onScopeDispose, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { crawler } from "./api/crawler";
+import { downloader } from "./api/downloader";
 import AppToaster from "./components/AppToaster.vue";
 import { useWindowClose } from "./composables/use-window-close";
 import WorkspaceAppearance from "./components/dashboard/WorkspaceAppearance.vue";
-import WorkspaceIcon from "./components/dashboard/WorkspaceIcon.vue";
+import WorkspaceIcon from "./components/ui/WorkspaceIcon.vue";
 import WorkspaceSidebar from "./components/dashboard/WorkspaceSidebar.vue";
 import NavigationTransition from "./components/NavigationTransition.vue";
 import { tools } from "./const/dashboard/tools";
@@ -75,10 +76,10 @@ function finishClosePrompt() {
   resolveClose = undefined;
 }
 
-// Wait for the editor's close decision before cancelling native crawler activity.
+// Wait for the editor's close decision before cancelling native transfers and crawls.
 const closeError = useWindowClose(async () => {
   if (editor.value && !(await editor.value.requestClose(askClose))) return false;
-  await crawler.shutdown().catch(() => undefined);
+  await Promise.allSettled([crawler.shutdown(), downloader.shutdown()]);
   return true;
 });
 </script>
@@ -132,7 +133,7 @@ const closeError = useWindowClose(async () => {
       <div class="workspace-content">
         <RouterView v-slot="{ Component }">
           <NavigationTransition kind="page" direction="left">
-            <KeepAlive include="ApiTesterPage,CrawlerPage">
+            <KeepAlive include="ApiTesterPage,CrawlerPage,DownloaderPage">
               <component
                 :is="Component"
                 v-if="!enterEditor"

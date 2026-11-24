@@ -1,7 +1,7 @@
 <!-- Shows persistent dashboard and tool navigation. -->
 <script setup lang="ts">
 import { tools } from "../../const/dashboard/tools";
-import WorkspaceIcon from "./WorkspaceIcon.vue";
+import WorkspaceIcon from "../ui/WorkspaceIcon.vue";
 
 // List only live tools so every shortcut leads to a working page.
 </script>
