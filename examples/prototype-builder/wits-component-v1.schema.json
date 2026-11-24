@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WITS Component v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "revision", "name", "defaultWidth", "fields", "root"],
+  "properties": {
+    "version": { "const": 1 },
+    "id": { "type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9-]{0,63}(\\.[a-z][a-z0-9-]{0,63})+$" },
+    "revision": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "\\S" },
+    "defaultWidth": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "fields": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "default"],
+        "properties": {
+          "label": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "\\S" },
+          "default": { "type": "string", "maxLength": 2000 }
+        }
+      }
+    },
+    "root": { "$ref": "#/$defs/element" }
+  },
+  "$defs": {
+    "color": {
+      "anyOf": [
+        { "enum": ["screen", "surface", "text", "muted", "border", "accent", "onAccent"] },
+        { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+      ]
+    },
+    "size": { "type": "integer", "minimum": 0, "maximum": 512 },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fill": { "$ref": "#/$defs/color" },
+        "color": { "$ref": "#/$defs/color" },
+        "border": { "$ref": "#/$defs/color" },
+        "radius": { "$ref": "#/$defs/size" },
+        "padding": { "$ref": "#/$defs/size" },
+        "gap": { "$ref": "#/$defs/size" },
+        "fontSize": { "type": "integer", "minimum": 1, "maximum": 512 },
+        "weight": { "type": "integer", "minimum": 100, "maximum": 900 }
+      }
+    },
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "literal": { "type": "string", "maxLength": 2000 },
+        "field": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" }
+      }
+    },
+    "element": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "children"],
+          "properties": {
+            "kind": { "enum": ["stack", "row"] },
+            "children": { "type": "array", "maxItems": 63, "items": { "$ref": "#/$defs/element" } },
+            "style": { "$ref": "#/$defs/style" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "text"],
+          "properties": {
+            "kind": { "enum": ["text", "button"] },
+            "text": { "$ref": "#/$defs/text" },
+            "style": { "$ref": "#/$defs/style" }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "id": "wits.pricing-card",
+  "revision": 1,
+  "name": "Pricing card",
+  "defaultWidth": 360,
+  "fields": {
+    "plan": { "label": "Plan name", "default": "Studio" },
+    "price": { "label": "Price", "default": "$24" },
+    "period": { "label": "Billing period", "default": "per month" },
+    "action": { "label": "Button label", "default": "Choose Studio" }
+  },
+  "root": {
+    "kind": "stack",
+    "style": { "fill": "surface", "border": "border", "radius": 18, "padding": 24, "gap": 16 },
+    "children": [
+      { "kind": "text", "text": { "field": "plan" }, "style": { "fontSize": 22, "weight": 650 } },
+      {
+        "kind": "row",
+        "style": { "gap": 8 },
+        "children": [
+          { "kind": "text", "text": { "field": "price" }, "style": { "fontSize": 36, "weight": 700 } },
+          { "kind": "text", "text": { "field": "period" }, "style": { "color": "muted" } }
+        ]
+      },
+      { "kind": "button", "text": { "field": "action" }, "style": { "radius": 24, "padding": 12 } }
+    ]
+  }
+}

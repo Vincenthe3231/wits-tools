@@ -19,7 +19,7 @@ export function fromStarter(starter: Starter): LinearDocument {
     version: 2,
     blocks: [
       { id: headingId, kind: "heading", text: starter.title },
-      ...starter.cards.map((card): PrototypeBlock => ({ ...card, kind: "card" })),
+      ...starter.cards.map((card): LinearDocument["blocks"][number] => ({ ...card, kind: "card" })),
     ],
   };
 }
@@ -28,12 +28,17 @@ export function fromStarter(starter: Starter): LinearDocument {
 export function openVariant(variant: SavedVariant): Omit<Variant, "document"> & { document: Variant["document"] | LinearDocument } {
   const { id, name, sourceUrl } = variant;
   const document = "document" in variant
-    ? variant.document.version === 3
+    ? variant.document.version !== 2
       ? { ...variant.document, screen: { ...variant.document.screen },
         nodes: variant.document.nodes.map((node) => ({ ...node, block: { ...node.block } })) }
       : { ...variant.document, blocks: variant.document.blocks.map((block) => ({ ...block })) }
     : fromStarter(variant.starter);
   return { id, name, sourceUrl, document };
+}
+
+// A palette entry and a saved instance resolve by their exact definition revision.
+export function definitionKey(definition: { id: string; revision: number }) {
+  return definition.id + "@" + definition.revision;
 }
 
 // Create a ready-to-edit block at the selected insertion boundary.

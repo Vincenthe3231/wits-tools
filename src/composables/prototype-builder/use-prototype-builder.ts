@@ -14,6 +14,8 @@ import {
 import { notify } from "../use-notifications";
 import { fromStarter, openVariant } from "../../utils/prototype-builder/document";
 import { emptyCanvas } from "../../utils/prototype-builder/geometry";
+import { applyEdit, type EditCommand } from "../../utils/prototype-builder/engine";
+import { currentTheme } from "../../utils/prototype-builder/appearance";
 
 // Map native codes to recovery steps the user can take in the workspace.
 const messages: Record<string, string> = {
@@ -26,7 +28,8 @@ const messages: Record<string, string> = {
   storageUnavailable: "Check that WITS can access its app data folder and retry.",
 };
 
-export function usePrototypeBuilder(convert: (document: LinearDocument) => Promise<PrototypeDocument>) {
+export function usePrototypeBuilder(convert: (document: LinearDocument) => Promise<PrototypeDocument>,
+  repository: Pick<typeof prototypeBuilder, "import" | "save" | "list"> = prototypeBuilder) {
   // Track each request separately so failures stay beside the action that owns them.
   const source = ref("");
   const draft = ref<Variant | null>(null);
@@ -54,6 +57,9 @@ export function usePrototypeBuilder(convert: (document: LinearDocument) => Promi
 
   // Replace the draft only after a successful import or a confirmed user action.
   function setDraft(variant: Variant, unsaved: boolean) {
+    if (variant.document.version !== 4) {
+      variant = { ...variant, document: { ...variant.document, version: 4, theme: currentTheme(), definitions: [] } };
+    }
     draft.value = variant;
     saveError.value = "";
     checkpoint.value = unsaved ? null : fingerprint(variant);
@@ -78,7 +84,7 @@ export function usePrototypeBuilder(convert: (document: LinearDocument) => Promi
     busy.value = true;
     importError.value = "";
     try {
-      await startDraft(await prototypeBuilder.import(source.value));
+      await startDraft(await repository.import(source.value));
       return true;
     } catch (error) {
       importError.value = message(error, "Try importing the starter again.");
@@ -112,7 +118,7 @@ export function usePrototypeBuilder(convert: (document: LinearDocument) => Promi
     loading.value = true;
     listError.value = "";
     try {
-      const saved = await prototypeBuilder.list();
+      const saved = await repository.list();
       if (request === listRequest) variants.value = saved;
     } catch (error) {
       if (request === listRequest) listError.value = message(error, "Try loading saved variants again.");
@@ -127,7 +133,7 @@ export function usePrototypeBuilder(convert: (document: LinearDocument) => Promi
     listError.value = "";
     try {
       const opened = openVariant(variant);
-      const document = opened.document.version === 3 ? opened.document : await convert(opened.document);
+      const document = "nodes" in opened.document ? opened.document : await convert(opened.document);
       setDraft({ ...opened, document }, false);
       return true;
     } catch {
@@ -146,7 +152,7 @@ export function usePrototypeBuilder(convert: (document: LinearDocument) => Promi
     busy.value = true;
     saveError.value = "";
     try {
-      const id = await prototypeBuilder.save({ ...snapshot, id: copy ? null : snapshot.id });
+      const id = await repository.save({ ...snapshot, id: copy ? null : snapshot.id });
       draft.value = { ...snapshot, id };
       checkpoint.value = fingerprint(snapshot);
       notify({ severity: "success", title: "Variant saved" });
@@ -174,14 +180,16 @@ export function usePrototypeBuilder(convert: (document: LinearDocument) => Promi
   }
 
   function edit(change: (variant: Variant) => Variant, live = false) {
-    if (!draft.value || busy.value) return;
+    if (!draft.value || busy.value) return false;
     if (!live) finishField();
     const before = draft.value;
     const after = change(before);
+    if (after === before) return false;
     if (live) fieldStart.value ??= before;
     draft.value = after;
     if (!live) remember(before);
     saveError.value = "";
+    return true;
   }
 
   // The save identity belongs to the active draft even when undo crosses a save.
@@ -201,17 +209,16 @@ export function usePrototypeBuilder(convert: (document: LinearDocument) => Promi
     && fingerprint(fieldStart.value) !== fingerprint(draft.value));
   const canUndo = computed(() => past.value.length > 0 || editingField.value);
   const canRedo = computed(() => future.value.length > 0 && !editingField.value);
-  const changeDocument = (change: (document: PrototypeDocument) => PrototypeDocument, live = false) =>
-    edit((variant) => ({ ...variant, document: change(variant.document) }), live);
-  const updateBlock = (block: PrototypeBlock) => changeDocument((document) => ({
-    ...document,
-    nodes: document.nodes.map((node) => node.block.id === block.id ? { ...node, block } : node),
-  }), true);
+  const dispatch = (command: EditCommand, live = false) => edit((variant) => {
+    const document = applyEdit(variant.document, command);
+    return document === variant.document ? variant : { ...variant, document };
+  }, live);
+  const updateBlock = (block: PrototypeBlock) => dispatch({ type: "content", block }, true);
   const renameDraft = (name: string) => edit((variant) => ({ ...variant, name }), true);
 
   return {
     source, draft, variants, busy, loading, importError, saveError, listError, dirty,
     newPrototype, importStarter, openSample, load, open, save,
-    changeDocument, updateBlock, renameDraft, finishField, travel, canUndo, canRedo,
+    dispatch, updateBlock, renameDraft, finishField, travel, canUndo, canRedo,
   };
 }

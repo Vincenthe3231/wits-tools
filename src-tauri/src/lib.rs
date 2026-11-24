@@ -22,6 +22,10 @@ pub fn run() {
         prototype_builder::prototype_import,
         prototype_builder::prototype_save,
         prototype_builder::prototype_list,
+        prototype_builder::component::prototype_component_choose,
+        prototype_builder::component::prototype_component_install,
+        prototype_builder::component::prototype_component_list,
+        prototype_builder::component::prototype_component_remove,
         // Keep crawls, media transfers, and capture sessions behind typed native commands.
         crawler::commands::crawler_start,
         crawler::commands::crawler_jobs,

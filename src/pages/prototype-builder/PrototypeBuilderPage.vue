@@ -4,13 +4,17 @@ import { computed, nextTick, onMounted, onScopeDispose, ref } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
 
-import type { BlockKind, CanvasNode, LinearDocument, NodeGeometry, SavedVariant } from "../../api/prototype-builder";
+import { prototypeBuilder, type BlockKind, type CanvasNode, type ComponentDefinition, type ComponentReview,
+  type LinearDocument, type NodeGeometry, type SavedVariant } from "../../api/prototype-builder";
+import PrototypeAppearance from "../../components/prototype-builder/PrototypeAppearance.vue";
+import PrototypeComponentView from "../../components/prototype-builder/PrototypeComponentView.vue";
 import PrototypeCanvas from "../../components/prototype-builder/PrototypeCanvas.vue";
 import PrototypeBlockProperties from "../../components/prototype-builder/PrototypeBlockProperties.vue";
 import PrototypeBlockView from "../../components/prototype-builder/PrototypeBlockView.vue";
 import { usePrototypeBuilder } from "../../composables/prototype-builder/use-prototype-builder";
-import { createBlock } from "../../utils/prototype-builder/document";
-import { blockWidth, coordinate, layerNodes, MAX_COORDINATE, MAX_DIMENSION, MIN_COORDINATE, stackCanvas, type Point } from "../../utils/prototype-builder/geometry";
+import { createBlock, definitionKey } from "../../utils/prototype-builder/document";
+import { currentTheme, themeCss } from "../../utils/prototype-builder/appearance";
+import { blockWidth, coordinate, MAX_COORDINATE, MAX_DIMENSION, MIN_COORDINATE, stackCanvas, type Point } from "../../utils/prototype-builder/geometry";
 
 type CloseChoice = "save" | "discard" | "cancel";
 
@@ -43,12 +47,20 @@ async function convert(document: LinearDocument) {
 
 const {
   source, draft, variants, busy, loading, importError, saveError, listError, dirty,
-  importStarter, openSample, load, open, save, newPrototype, changeDocument, updateBlock,
+  importStarter, openSample, load, open, save, newPrototype, dispatch, updateBlock,
   renameDraft, finishField, travel, canUndo, canRedo,
 } = usePrototypeBuilder(convert);
 const nodes = computed(() => draft.value?.document.nodes ?? []);
 const layers = computed(() => [...nodes.value].reverse());
 const selectedNode = computed(() => nodes.value.find((node) => node.block.id === selectedId.value));
+const theme = computed(() => draft.value?.document.theme ?? currentTheme());
+const findDefinition = (node: CanvasNode) => {
+  const block = node.block;
+  return block.kind === "imported"
+    ? draft.value?.document.definitions?.find(({ id, revision }) => id === block.definitionId && revision === block.revision)
+    : undefined;
+};
+const selectedDefinition = computed(() => selectedNode.value ? findDefinition(selectedNode.value) : undefined);
 const layerActions = [
   { action: "front", label: "Bring to front" },
   { action: "raise", label: "Raise" },
@@ -57,18 +69,18 @@ const layerActions = [
 ] as const;
 
 // Pointer and inspector changes go through the same history path.
-function insertNode(kind: BlockKind, point: Point) {
+function insertNode(source: BlockKind | ComponentDefinition, point: Point) {
   const id = crypto.randomUUID();
-  const node = { block: createBlock(kind, id), x: coordinate(point.x), y: coordinate(point.y), width: blockWidth(kind) };
-  changeDocument((document) => ({ ...document, nodes: [...document.nodes, node] }));
-  selectedId.value = id;
+  const definition = typeof source === "string" ? undefined : source;
+  const block = typeof source === "string" ? createBlock(source, id)
+    : { id, kind: "imported" as const, definitionId: source.id, revision: source.revision, values: {} };
+  const width = typeof source === "string" ? blockWidth(source) : source.defaultWidth;
+  const node = { block, x: coordinate(point.x), y: coordinate(point.y), width };
+  if (dispatch({ type: "insert", node, definition })) selectedId.value = id;
 }
 
 function moveNode(id: string, geometry: NodeGeometry) {
-  changeDocument((document) => ({
-    ...document,
-    nodes: document.nodes.map((node) => node.block.id === id ? { ...node, ...geometry } : node),
-  }));
+  dispatch({ type: "geometry", id, geometry });
 }
 
 function changeGeometry(event: Event, node: CanvasNode, field: keyof NodeGeometry) {
@@ -86,18 +98,18 @@ function changeScreen(event: Event, field: "width" | "height") {
     input.value = String(draft.value?.document.screen[field]);
     return;
   }
-  changeDocument((document) => ({ ...document, screen: { ...document.screen, [field]: input.valueAsNumber } }));
+  dispatch({ type: "screen", size: { [field]: input.valueAsNumber } });
 }
 
 function removeSelected(id: string) {
-  changeDocument((document) => ({ ...document, nodes: document.nodes.filter((node) => node.block.id !== id) }));
+  if (!dispatch({ type: "remove", id })) return;
   selectedId.value = null;
   canvas.value?.focus();
 }
 
 function order(action: typeof layerActions[number]["action"]) {
   const id = selectedId.value;
-  if (id) changeDocument((document) => ({ ...document, nodes: layerNodes(document.nodes, id, action) }));
+  if (id) dispatch({ type: "layer", id, order: action });
 }
 
 function history(redo = false) {
@@ -108,8 +120,78 @@ function history(redo = false) {
 
 function layerName(node: CanvasNode) {
   const block = node.block;
+  if (block.kind === "imported") return findDefinition(node)?.name ?? block.definitionId;
   const copy = "title" in block ? block.title : "text" in block ? block.text : block.label;
   return copy.trim() || palette.find(({ kind }) => kind === block.kind)?.label;
+}
+
+// Library review and installation never replace or edit the current draft.
+const library = ref<ComponentDefinition[]>([]);
+const review = ref<ComponentReview>();
+const libraryBusy = ref(false);
+const libraryError = ref("");
+const reviewValues = computed(() => Object.fromEntries(Object.entries(review.value?.definition?.fields ?? {})
+  .map(([key, field]) => [key, field.default])));
+
+async function loadComponents() {
+  library.value = await prototypeBuilder.components();
+}
+
+async function libraryAction(action: () => Promise<void>) {
+  if (libraryBusy.value) return;
+  libraryBusy.value = true;
+  libraryError.value = "";
+  try {
+    await action();
+  } catch {
+    libraryError.value = "Could not complete the library action. Try again.";
+  } finally {
+    libraryBusy.value = false;
+  }
+}
+
+function chooseComponent() {
+  return libraryAction(async () => {
+    const result = await prototypeBuilder.chooseComponent();
+    if (result) review.value = result;
+  });
+}
+
+function installComponent() {
+  const definition = review.value?.definition;
+  if (!definition) return;
+  return libraryAction(async () => {
+    const result = await prototypeBuilder.installComponent(definition);
+    review.value = result.diagnostics.length ? result : undefined;
+    await loadComponents();
+  });
+}
+
+function removeComponent(definition: ComponentDefinition) {
+  return libraryAction(async () => {
+    await prototypeBuilder.removeComponent(definition.id, definition.revision);
+    await loadComponents();
+  });
+}
+
+function changeImportedField(key: string, event: Event) {
+  const block = selectedNode.value?.block;
+  if (block?.kind !== "imported") return;
+  const input = event.target as HTMLInputElement;
+  const value = input.value;
+  const defaultValue = selectedDefinition.value?.fields[key]?.default;
+  if (new TextEncoder().encode(value).length > 2000) {
+    input.value = importedValue(block.values, key, defaultValue ?? "");
+    return;
+  }
+  const values = { ...block.values };
+  if (value === defaultValue) delete values[key];
+  else values[key] = value;
+  updateBlock({ ...block, values });
+}
+
+function importedValue(values: Record<string, string>, key: string, fallback: string) {
+  return Object.prototype.hasOwnProperty.call(values, key) ? values[key] ?? fallback : fallback;
 }
 
 // Keep dirty drafts intact until the user confirms a replacement or route change.
@@ -148,6 +230,7 @@ function restoreReplacementFocus(event: Event) {
 onBeforeRouteLeave(mayReplace);
 onScopeDispose(() => answerReplacement(false));
 onMounted(load);
+onMounted(() => libraryAction(loadComponents));
 
 // Clear editor-only state once an open or import has actually succeeded.
 function enterDraft() {
@@ -243,6 +326,36 @@ defineExpose({ requestClose });
       </section>
 
       <!-- Both the palette and existing canvas blocks feed the same insertion slots. -->
+      <section class="panel" aria-label="Component library">
+        <div class="controls">
+          <button type="button" class="builder-button" :disabled="libraryBusy || busy" @click="chooseComponent">Import component file</button>
+          <button v-if="libraryError" type="button" class="builder-button" :disabled="libraryBusy" @click="libraryAction(loadComponents)">Reload library</button>
+        </div>
+        <p v-if="libraryError" class="error" role="alert">{{ libraryError }}</p>
+        <!-- Keep review separate from palette installation and locate errors in the selected file. -->
+        <div v-if="review" class="field">
+          <h2>{{ review.name }}</h2>
+          <ul v-if="review.diagnostics.length" class="field" aria-label="Import diagnostics" role="alert">
+            <li v-for="(diagnostic, index) in review.diagnostics" :key="index">
+              <strong>{{ diagnostic.code }}</strong>
+              <span v-if="diagnostic.line !== undefined"> · Line {{ diagnostic.line }}, column {{ diagnostic.column }}</span>
+              <code v-if="diagnostic.path"> {{ diagnostic.path }}</code>
+              <p>{{ diagnostic.message }}</p>
+            </li>
+          </ul>
+          <template v-else-if="review.definition">
+            <div class="component-review" :style="{ ...themeCss(theme), width: review.definition.defaultWidth + 'px' }">
+              <PrototypeComponentView :element="review.definition.root" :values="reviewValues" :theme="theme" />
+            </div>
+            <div class="controls">
+              <button class="builder-button primary-button" type="button" :disabled="libraryBusy" @click="installComponent">Add to palette</button>
+              <button class="builder-button" type="button" :disabled="libraryBusy" @click="review = undefined">Cancel review</button>
+            </div>
+          </template>
+          <button v-if="review.diagnostics.length" class="builder-button" type="button" @click="review = undefined">Dismiss diagnostics</button>
+        </div>
+      </section>
+
       <template v-if="draft">
         <!-- The palette and layer list leave the workspace free for direct manipulation. -->
         <section class="panel palette">
@@ -259,6 +372,13 @@ defineExpose({ requestClose });
                 :disabled="busy"
                 @click="canvas?.add(item.kind)"
               >Add</button>
+            </li>
+            <li v-for="definition in library" :key="definitionKey(definition)" class="palette-item">
+              <span class="drag-handle" @pointerdown="canvas?.startPalette($event, definition)">
+                <span aria-hidden="true">⠿</span> {{ definition.name }} · v{{ definition.revision }}
+              </span>
+              <button type="button" class="builder-button" :disabled="busy" :aria-label="'Add ' + definition.name + ' revision ' + definition.revision" @click="canvas?.add(definition)">Add</button>
+              <button type="button" class="builder-button" :disabled="libraryBusy" :aria-label="'Remove ' + definition.name + ' revision ' + definition.revision + ' from palette'" @click="removeComponent(definition)">Remove</button>
             </li>
           </ul>
         </section>
@@ -317,6 +437,10 @@ defineExpose({ requestClose });
                   <input type="number" required min="1" :max="MAX_DIMENSION" :value="draft.document.screen[field]" @change="changeScreen($event, field)" />
                 </label>
               </fieldset>
+              <details>
+                <summary>Project theme</summary>
+                <PrototypeAppearance :theme="theme" :disabled="busy" @theme="dispatch({ type: 'theme', theme: $event })" />
+              </details>
               <template v-if="selectedNode">
                 <fieldset class="geometry-fields" :key="selectedNode.block.id" :disabled="busy">
                   <legend>Component</legend>
@@ -345,12 +469,30 @@ defineExpose({ requestClose });
                   </label>
                 </fieldset>
                 <PrototypeBlockProperties
+                  v-if="selectedNode.block.kind !== 'imported'"
                   :key="selectedNode.block.id"
                   :block="selectedNode.block"
                   :disabled="busy"
                   @update="updateBlock"
                   @remove="removeSelected"
                 />
+                <template v-else>
+                  <label v-for="(field, key) in selectedDefinition?.fields" :key="key" class="field">
+                    {{ field.label }}
+                    <input :value="importedValue(selectedNode.block.values, key, field.default)" :disabled="busy" @input="changeImportedField(key, $event)" />
+                  </label>
+                  <button type="button" class="builder-button" :disabled="busy" @click="removeSelected(selectedNode.block.id)">Remove block</button>
+                </template>
+                <details :key="'appearance-' + selectedNode.block.id">
+                  <summary>Component appearance</summary>
+                  <PrototypeAppearance
+                    :theme="theme"
+                    :node="selectedNode"
+                    :definition="selectedDefinition"
+                    :disabled="busy"
+                    @style="dispatch({ type: 'style', id: selectedNode.block.id, style: $event })"
+                  />
+                </details>
               </template>
             </section>
           </aside>
@@ -480,6 +622,13 @@ defineExpose({ requestClose });
   padding-inline: 0.4rem;
   border-radius: 0.75rem;
   background: var(--surface-toolbar);
+}
+
+/* Bound review width to available space while using the authored theme. */
+.component-review {
+  max-width: 100%;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
 }
 
 .drag-handle {

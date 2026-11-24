@@ -1,5 +1,6 @@
 //! Imports GitHub starter data and stores independent local prototype snapshots.
 
+pub(crate) mod component;
 mod storage;
 
 use std::time::Duration;

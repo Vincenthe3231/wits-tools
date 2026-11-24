@@ -2,14 +2,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-import type { BlockKind, CanvasNode, NodeGeometry, PrototypeDocument } from "../../api/prototype-builder";
-import { blockWidth, coordinate, fitCamera, resizeCorner, resizeWidth, toDocument, type Camera, type Point } from "../../utils/prototype-builder/geometry";
+import type { BlockKind, CanvasNode, ComponentDefinition, NodeGeometry, PrototypeBlock, PrototypeDocument } from "../../api/prototype-builder";
+import { blockWidth, coordinate, fitCamera, toDocument, type Camera, type Point } from "../../utils/prototype-builder/geometry";
+import { advanceGesture, type Gesture, type GestureAction } from "../../utils/prototype-builder/engine";
+import { currentTheme, styleCss, themeCss } from "../../utils/prototype-builder/appearance";
 import PrototypeBlockView from "./PrototypeBlockView.vue";
 
 const props = defineProps<{ document: PrototypeDocument; selectedId?: string | null; preview?: boolean; disabled?: boolean }>();
 const emit = defineEmits<{
   select: [id: string | null];
-  insert: [kind: BlockKind, point: Point];
+  insert: [kind: PaletteSource, point: Point];
   move: [id: string, geometry: NodeGeometry];
   history: [redo: boolean];
 }>();
@@ -26,7 +28,13 @@ const space = ref(false);
 const selectedHeight = ref(0);
 const selected = computed(() => props.document.nodes.find((node) => node.block.id === props.selectedId));
 const transient = ref<{ id: string; geometry: NodeGeometry }>();
-const ghost = ref<{ kind: BlockKind; point: Point }>();
+type PaletteSource = BlockKind | ComponentDefinition;
+const ghost = ref<{ kind: PaletteSource; point: Point }>();
+const theme = computed(() => props.document.theme ?? currentTheme());
+const widthOf = (source: PaletteSource) => typeof source === "string" ? blockWidth(source) : source.defaultWidth;
+const definitionFor = (block: PrototypeBlock) => block.kind === "imported"
+  ? props.document.definitions?.find(({ id, revision }) => id === block.definitionId && revision === block.revision)
+  : undefined;
 const visibleSelection = computed(() => selected.value ? projectNode(selected.value) : undefined);
 let viewportObserver: ResizeObserver | undefined;
 let selectionObserver: ResizeObserver | undefined;
@@ -47,6 +55,7 @@ function nodeStyle(node: Omit<CanvasNode, "block">) {
 }
 
 function fitScreen() {
+  if (active) return;
   needsFit = size.value.width === 0 || size.value.height === 0;
   if (!needsFit) camera.value = fitted.value;
 }
@@ -57,12 +66,14 @@ function findNode(id: string) {
 }
 
 function fitSelection() {
+  if (active) return;
   const node = visibleSelection.value;
   if (!node) return;
   camera.value = fitCamera({ ...node, height: Math.max(1, selectedHeight.value) }, size.value, 32, 1);
 }
 
 function zoomBy(factor: number) {
+  if (active) return;
   const current = camera.value;
   const center = { x: size.value.width / 2, y: size.value.height / 2 };
   const anchor = toDocument(center, current);
@@ -70,9 +81,9 @@ function zoomBy(factor: number) {
   camera.value = { x: center.x - anchor.x * zoom, y: center.y - anchor.y * zoom, zoom };
 }
 
-function add(kind: BlockKind) {
+function add(kind: PaletteSource) {
   const center = toDocument({ x: size.value.width / 2, y: size.value.height / 2 }, camera.value);
-  emit("insert", kind, { x: center.x - blockWidth(kind) / 2, y: center.y });
+  emit("insert", kind, { x: center.x - widthOf(kind) / 2, y: center.y });
   viewport.value?.focus({ preventScroll: true });
 }
 
@@ -103,12 +114,9 @@ watch(() => props.document.nodes, observePreview, { flush: "post" });
 
 // Capture one pointer, preview its changes locally, and commit only on release.
 type Edge = "left" | "right";
-type Action =
-  | { kind: "pan"; camera: Camera }
-  | { kind: "palette"; blockKind: BlockKind }
-  | { kind: "move"; node: CanvasNode }
-  | { kind: "resize"; node: CanvasNode; edge: Edge; cornerHeight?: number };
-let active: { pointer: number; target: Element; start: Point; action: Action; moved: boolean } | undefined;
+type Action = Exclude<GestureAction, { kind: "pan" | "palette" }>
+  | { kind: "pan" } | { kind: "palette"; blockKind: PaletteSource };
+let active: { pointer: number; target: Element; gesture: Gesture; action: Action } | undefined;
 const dragging = ref(false);
 const clientPoint = (event: PointerEvent) => ({ x: event.clientX, y: event.clientY });
 
@@ -123,17 +131,17 @@ function start(event: PointerEvent, action: Action) {
   event.preventDefault();
   viewport.value?.focus({ preventScroll: true });
   target.setPointerCapture(event.pointerId);
-  active = { pointer: event.pointerId, target, start: clientPoint(event), action, moved: false };
+  active = { pointer: event.pointerId, target, gesture: { phase: "pending", start: local(clientPoint(event)), camera: { ...camera.value }, action }, action };
 }
 
-function startPalette(event: PointerEvent, blockKind: BlockKind) {
+function startPalette(event: PointerEvent, blockKind: PaletteSource) {
   if (event.button === 0) start(event, { kind: "palette", blockKind });
 }
 
 function startCanvas(event: PointerEvent) {
   if (active || props.disabled || props.preview || !event.isPrimary) return;
   if (event.button === 1 || event.button === 0 && (space.value || tool.value === "hand")) {
-    start(event, { kind: "pan", camera: { ...camera.value } });
+    start(event, { kind: "pan" });
     return;
   }
   if (event.button !== 0) return;
@@ -162,34 +170,26 @@ function inside(point: Point) {
 
 function move(event: PointerEvent) {
   if (!active || active.pointer !== event.pointerId) return;
-  const client = clientPoint(event);
-  const dx = client.x - active.start.x;
-  const dy = client.y - active.start.y;
-  if (!active.moved && Math.hypot(dx, dy) < 4) return;
-  active.moved = true;
+  if (props.disabled || props.preview) {
+    clearGesture();
+    return;
+  }
+  const point = local(clientPoint(event));
+  const result = advanceGesture(active.gesture, point);
+  if (!result) return;
+  active.gesture.phase = "active";
   dragging.value = true;
-  const action = active.action;
-  if (action.kind === "pan") {
-    camera.value = { ...action.camera, x: action.camera.x + dx, y: action.camera.y + dy };
-  } else if (action.kind === "palette") {
-    const point = local(client);
-    ghost.value = inside(point) ? { kind: action.blockKind, point: toDocument(point, camera.value) } : undefined;
-  } else {
-    const x = dx / camera.value.zoom;
-    const y = dy / camera.value.zoom;
-    const geometry = action.kind === "move"
-      ? { x: coordinate(action.node.x + x), y: coordinate(action.node.y + y) }
-      : action.cornerHeight === undefined
-        ? resizeWidth(action.node, x, action.edge)
-        : resizeCorner(action.node, action.cornerHeight, { x, y }, action.edge);
-    transient.value = { id: action.node.block.id, geometry };
+  if (result.kind === "pan") camera.value = result.camera;
+  if (result.kind === "geometry") transient.value = result;
+  if (result.kind === "palette" && active.action.kind === "palette") {
+    ghost.value = inside(point) ? { kind: active.action.blockKind, point: result.point } : undefined;
   }
 }
 
 function clearGesture(restore = true) {
   const gesture = active;
   active = undefined;
-  if (restore && gesture?.action.kind === "pan") camera.value = gesture.action.camera;
+  if (restore && gesture?.action.kind === "pan") camera.value = gesture.gesture.camera;
   if (gesture?.target.hasPointerCapture(gesture.pointer)) gesture.target.releasePointerCapture(gesture.pointer);
   transient.value = undefined;
   ghost.value = undefined;
@@ -214,6 +214,9 @@ function onBlur() {
   space.value = false;
   clearGesture();
 }
+
+// A save or replacement can disable editing while a pointer is still captured.
+watch(() => props.disabled, (disabled) => { if (disabled) onBlur(); });
 
 // Focus-scoped keyboard controls leave project fields and form inputs to the browser.
 function keydown(event: KeyboardEvent) {
@@ -321,6 +324,7 @@ defineExpose({ startPalette, add, fitScreen, focus: () => viewport.value?.focus(
         class="canvas-frame"
         :class="{ clipped: preview }"
         :style="{
+          ...themeCss(theme),
           transform: 'translate(' + view.x + 'px, ' + view.y + 'px) scale(' + view.zoom + ')',
           width: document.screen.width + 'px',
           height: document.screen.height + 'px',
@@ -334,13 +338,20 @@ defineExpose({ startPalette, add, fitScreen, focus: () => viewport.value?.focus(
           :style="nodeStyle(projectNode(node))"
         >
           <div class="node-body" :inert="!preview">
-            <PrototypeBlockView :block="node.block" :interactive="preview" />
+            <PrototypeBlockView
+              :block="node.block"
+              :interactive="preview"
+              :definition="definitionFor(node.block)"
+              :theme="theme"
+              :appearance="styleCss(node.style, theme)"
+              :style-override="node.style"
+            />
           </div>
         </div>
         <div
           v-if="ghost"
           class="canvas-node canvas-ghost"
-          :style="nodeStyle({ ...ghost.point, width: blockWidth(ghost.kind) })"
+          :style="nodeStyle({ ...ghost.point, width: widthOf(ghost.kind) })"
         />
       </div>
       <div

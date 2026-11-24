@@ -1,7 +1,10 @@
 /** Verifies starter conversion and the block operations used by the editor. */
 import { expect, test } from "bun:test";
 
-import type { Starter } from "../src/api/prototype-builder";
+import type { ComponentDefinition, Starter } from "../src/api/prototype-builder";
+import { advanceGesture, applyEdit, type Gesture } from "../src/utils/prototype-builder/engine";
+import { currentTheme, styleCss } from "../src/utils/prototype-builder/appearance";
+import pricing from "../examples/prototype-builder/pricing-card.wits-component.json";
 import { createBlock, fromStarter, openVariant } from "../src/utils/prototype-builder/document";
 import { emptyCanvas, fitCamera, layerNodes, resizeCorner, resizeWidth, stackCanvas, toDocument } from "../src/utils/prototype-builder/geometry";
 import { usePrototypeBuilder } from "../src/composables/prototype-builder/use-prototype-builder";
@@ -73,9 +76,65 @@ test("groups live field edits and undoes and redoes across a clean checkpoint", 
   project.finishField();
   expect(project.dirty.value).toBe(true);
   project.travel();
-  expect(project.draft.value?.document).toEqual(document);
+  expect(project.draft.value?.document.version).toBe(4);
+  expect(project.draft.value?.document.nodes).toEqual(document.nodes);
   expect(project.dirty.value).toBe(false);
   project.travel(true);
   expect(project.draft.value?.document.nodes[0]?.block).toMatchObject({ text: "One field edit" });
   expect(project.dirty.value).toBe(true);
+});
+
+// A pending pointer emits no geometry. Active projections leave the document untouched.
+test("uses captured zoom and applies one validated geometry command", () => {
+  const node = { block: createBlock("card", "one"), x: -14, y: 10, width: 360 };
+  const document = { ...emptyCanvas(), nodes: [node] };
+  const gesture: Gesture = { phase: "pending", start: { x: 10, y: 20 }, camera: { x: 0, y: 0, zoom: 0.5 },
+    action: { kind: "resize", node, edge: "left", cornerHeight: 150 } };
+  expect(advanceGesture(gesture, { x: 12, y: 20 })).toBeUndefined();
+  const projected = advanceGesture(gesture, { x: 20, y: 35 });
+  expect(projected).toMatchObject({ kind: "geometry", geometry: { x: 6, width: 340, height: 180 } });
+  expect(document.nodes[0]).toBe(node);
+  if (projected?.kind !== "geometry") throw new Error("Expected geometry");
+  const command = { ...projected, type: "geometry" as const };
+  const changed = applyEdit(document, command);
+  expect(changed.nodes[0]?.height).toBe(180);
+  expect(applyEdit(changed, command)).toBe(changed);
+  expect(applyEdit(changed, { type: "geometry", id: "one", geometry: { width: 0 } })).toBe(changed);
+});
+
+// Multiple placements share one revision and can override content and style independently.
+test("pins imported definitions and applies authored theme colors", () => {
+  const definition = pricing as ComponentDefinition;
+  const initial = { ...emptyCanvas(), version: 4 as const, theme: currentTheme(), definitions: [] };
+  const makeNode = (id: string) => ({ block: { id, kind: "imported" as const, definitionId: definition.id,
+    revision: definition.revision, values: {} }, x: 0, y: 0, width: definition.defaultWidth });
+  const first = applyEdit(initial, { type: "insert", node: makeNode("one"), definition });
+  const second = applyEdit(first, { type: "insert", node: makeNode("two"), definition });
+  const styled = applyEdit(second, { type: "style", id: "two", style: { fill: "accent", radius: 20 } });
+  expect(styled.definitions).toEqual([definition]);
+  expect(styled.nodes[0]?.style).toBeUndefined();
+  expect(styleCss(styled.nodes[1]?.style, initial.theme)).toMatchObject({ backgroundColor: initial.theme.accent, borderRadius: "20px" });
+  const removed = applyEdit(applyEdit(styled, { type: "remove", id: "one" }), { type: "remove", id: "two" });
+  expect(removed.definitions).toEqual([]);
+});
+
+// A failed write leaves the edited snapshot dirty and the previous checkpoint usable.
+test("tracks the successful save through a failed save and undo", async () => {
+  let fail = false;
+  const project = usePrototypeBuilder(async (linear) => stackCanvas(linear, []), {
+    save: async () => { if (fail) throw "storageUnavailable"; return "saved"; },
+    import: async () => { throw new Error("Unexpected import"); },
+    list: async () => [],
+  });
+  project.newPrototype();
+  project.dispatch({ type: "screen", size: { width: 390 } });
+  expect(await project.save()).toBe(true);
+  project.dispatch({ type: "screen", size: { width: 440 } });
+  fail = true;
+  expect(await project.save()).toBe(false);
+  expect(project.draft.value?.document.screen.width).toBe(440);
+  expect(project.dirty.value).toBe(true);
+  project.travel();
+  expect(project.draft.value?.document.screen.width).toBe(390);
+  expect(project.dirty.value).toBe(false);
 });

@@ -75,7 +75,7 @@ function changeSignIn(field: typeof signInFields[number]["field"], event: Event)
         <input :id="'prototype-sign-in-' + field" :value="block[field]" @input="changeSignIn(field, $event)" />
       </div>
     </template>
-    <div v-else>
+    <div v-else-if="block.kind === 'button'">
       <label for="prototype-button-label">Button label</label>
       <input id="prototype-button-label" :value="block.label" @input="changeLabel" />
       <p class="properties-note">Visual placeholder. This button has no action in preview.</p>

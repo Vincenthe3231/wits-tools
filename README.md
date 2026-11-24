@@ -125,11 +125,17 @@ On Windows, the release executable is `src-tauri/target/release/wits-tools.exe`.
 
 ## Prototype Builder
 
-Open **Prototype Builder** from the dashboard and choose **New prototype** to start with a blank screen. Drag a heading, text block, card, or button from the palette into the canvas, or use its **Add** action. Select a block to edit its properties or remove it. Reorder blocks with their drag handles or use **Move to position…** in **Block actions**. Choose **Preview** to see the screen without editing controls. Buttons are visual placeholders in this single-screen editor.
+Open **Prototype Builder** from the dashboard and choose **New prototype**. Drag a component from the palette or use **Add**. Move components freely, change their stacking in **Layers**, and edit geometry, copy, and appearance in **Properties**. Use the Hand tool or Space-drag to pan. Side handles resize width, and bottom corners resize width and minimum height together. **Preview** fits the authored screen and allows sample input in the built-in Sign-in card.
 
 Choose **Open bundled sample** to start offline, or paste a public GitHub repository URL and choose **Import GitHub starter**. A compatible repo contains `examples/prototype-builder/wits-starter.json` on its default branch. The [public starter](https://github.com/Vincenthe3231/wits-prototype-starter) is ready to import. WITS reads the version 1 dashboard data without requiring a clone, dependency installation, or project build.
 
-Choose **Save variant** to save the document locally, or **Save as new** to keep a separate copy. Saved variants reopen offline. Opening a version 1 starter or older saved variant converts its dashboard title and cards into editable blocks. Saving writes the new local document format.
+Choose **Save variant** to save locally, or **Save as new** to keep a separate copy. Saved variants reopen offline. Older saves open in the new editor and upgrade to v4 on an explicit save. The saved project theme is independent of the WITS appearance toggle.
+
+### Bring your own component
+
+Use **Import component file** to review a JSON definition, then **Add to palette** to install it. Start with the [pricing card example](examples/prototype-builder/pricing-card.wits-component.json) and [v1 JSON Schema](examples/prototype-builder/wits-component-v1.schema.json). Definitions use stacks, wrapping rows, text, and visual buttons. A text or button label can bind to a field declared in `fields`. Styles use the schema's typed values and project color tokens.
+
+WITS validates field references, rejects duplicate JSON keys, and reports a code, JSON Pointer, and source location for incompatible files. Imports are limited to 64 KiB, 64 elements, six tree levels, and 16 fields. Names and field labels use at most 100 UTF-8 bytes, and authored text uses at most 2000 bytes. Increase the revision to publish a changed definition. A saved variant embeds the exact revisions used by its layers, so removing a palette entry leaves those variants usable.
 
 ## Markdown images
 

@@ -60,7 +60,7 @@ defineProps<{ block: SignInBlock; interactive?: boolean }>();
 }
 
 .sign-in-card input {
-  border: 1px solid var(--text-muted);
+  border: 1px solid var(--prototype-border, var(--text-muted));
   background: var(--surface-editor);
   font-weight: 400;
 }

@@ -14,6 +14,10 @@
 | `--accent-strong` | `#24483d` | `#a9d3ba` | Links, focus rings, the caret, selected indicators, and primary button fills. |
 | `--text-on-accent` | `#ffffff` | `#17211d` | Text on an `--accent-strong` fill. |
 
+## Prototype appearance
+
+Prototype Builder's tools, panels, and review controls use these application tokens. The authored screen has its own saved colors and font, used consistently by Canvas and Preview. Component defaults may reference the authored colors, and Properties can override supported values on an individual layer. Import review renders the proposed component with the current project's authored colors.
+
 ## Status colors
 
 Use these tokens for toasts and inline notices. Each status defines a surface, text, and indicator. The indicator colors icons and borders. All tokens follow the same system or toolbar appearance setting as the workspace.

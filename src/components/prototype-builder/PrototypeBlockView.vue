@@ -1,24 +1,35 @@
 <!-- Renders the same prototype block in the canvas, preview, and drag image. -->
 <script setup lang="ts">
-import type { PrototypeBlock } from "../../api/prototype-builder";
+import type { CSSProperties } from "vue";
+import type { ComponentDefinition, PrototypeBlock } from "../../api/prototype-builder";
+import type { Style, Theme } from "../../utils/prototype-builder/appearance";
+import PrototypeComponentView from "./PrototypeComponentView.vue";
 import PrototypeSignInCard from "./PrototypeSignInCard.vue";
 
 // Text interpolation keeps imported content as text throughout all views.
-defineProps<{ block: PrototypeBlock; interactive?: boolean }>();
+defineProps<{ block: PrototypeBlock; interactive?: boolean; appearance?: CSSProperties;
+  styleOverride?: Style; definition?: ComponentDefinition; theme?: Theme }>();
 </script>
 
 <template>
   <!-- Render only authored content. Canvas controls belong to the page. -->
-  <h2 v-if="block.kind === 'heading'" class="prototype-heading">{{ block.text }}</h2>
-  <p v-else-if="block.kind === 'text'" class="prototype-text">{{ block.text }}</p>
-  <article v-else-if="block.kind === 'card'" class="prototype-card">
+  <h2 v-if="block.kind === 'heading'" class="prototype-heading" :style="appearance">{{ block.text }}</h2>
+  <p v-else-if="block.kind === 'text'" class="prototype-text" :style="appearance">{{ block.text }}</p>
+  <article v-else-if="block.kind === 'card'" class="prototype-card" :style="appearance">
     <h3>{{ block.title }}</h3>
     <p>{{ block.body }}</p>
   </article>
-  <PrototypeSignInCard v-else-if="block.kind === 'signIn'" :block="block" :interactive="interactive" />
-  <button v-else class="prototype-button" type="button" disabled>
+  <PrototypeSignInCard v-else-if="block.kind === 'signIn'" :block="block" :interactive="interactive" :style="appearance" />
+  <button v-else-if="block.kind === 'button'" class="prototype-button" :style="appearance" type="button" disabled>
     {{ block.label }}
   </button>
+  <PrototypeComponentView
+    v-else-if="definition && theme"
+    :element="definition.root"
+    :values="{ ...Object.fromEntries(Object.entries(definition.fields).map(([key, field]) => [key, field.default])), ...block.values }"
+    :theme="theme"
+    :override="styleOverride"
+  />
 </template>
 
 <style scoped>

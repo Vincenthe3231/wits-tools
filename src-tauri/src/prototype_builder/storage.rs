@@ -1,7 +1,7 @@
 //! Reads legacy snapshots and saves typed single-screen prototype documents in app data.
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
+use super::component::{ComponentDefinition, Style, Theme};
 use super::{Error, Starter, repository, validate};
 
 // Keep local snapshot metadata separate from the public version 1 starter.
@@ -44,6 +45,10 @@ struct CanvasDocument {
     version: u8,
     screen: Screen,
     nodes: Vec<Node>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    theme: Option<Theme>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    definitions: Option<Vec<ComponentDefinition>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -63,14 +68,16 @@ struct Node {
     // A missing height preserves intrinsic sizing in older v3 snapshots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     height: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    style: Option<Style>,
 }
 
 impl Variant {
     // Only the new format can be written through the desktop command.
     pub(super) fn require_canvas(&self) -> Result<(), Error> {
         match self.document {
-            Document::Canvas(_) => Ok(()),
-            Document::Linear(_) => Err(Error::InvalidDocument),
+            Document::Canvas(ref document) if document.version == 4 => Ok(()),
+            _ => Err(Error::InvalidDocument),
         }
     }
 }
@@ -104,6 +111,14 @@ enum Block {
         email_label: String,
         password_label: String,
         button_label: String,
+    },
+    // Resolve imported instances by the exact definition revision embedded in the document.
+    #[serde(rename_all = "camelCase")]
+    Imported {
+        id: String,
+        definition_id: String,
+        revision: u32,
+        values: BTreeMap<String, String>,
     },
 }
 
@@ -140,7 +155,8 @@ fn validate_document(document: &Document) -> Result<(), Error> {
     let blocks: Box<dyn Iterator<Item = &Block>> = match document {
         Document::Linear(doc) if doc.version == 2 => Box::new(doc.blocks.iter()),
         Document::Canvas(doc)
-            if doc.version == 3
+            if matches!(doc.version, 3 | 4)
+                && valid_appearance(doc)
                 && valid_dimension(doc.screen.width)
                 && valid_dimension(doc.screen.height)
                 && doc.nodes.iter().all(|node| {
@@ -157,6 +173,10 @@ fn validate_document(document: &Document) -> Result<(), Error> {
             Block::Text { id, .. } => (id, true),
             Block::Card { id, title, .. } => (id, !title.trim().is_empty()),
             Block::Button { id, label } => (id, !label.trim().is_empty()),
+            Block::Imported { id, .. } => (
+                id,
+                matches!(document, Document::Canvas(doc) if doc.version == 4),
+            ),
             // All visible titles and control labels must remain meaningful on reopen.
             Block::SignIn {
                 id,
@@ -176,6 +196,47 @@ fn validate_document(document: &Document) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+// Projects carry the definitions needed to render without consulting the library.
+fn valid_appearance(doc: &CanvasDocument) -> bool {
+    if doc.version == 3 {
+        return doc.theme.is_none()
+            && doc.definitions.is_none()
+            && doc.nodes.iter().all(|node| node.style.is_none());
+    }
+    let (Some(theme), Some(definitions)) = (&doc.theme, &doc.definitions) else {
+        return false;
+    };
+    let mut keys = HashSet::new();
+    theme.valid()
+        && definitions.iter().all(|definition| {
+            keys.insert((&definition.id, definition.revision)) && definition.valid()
+        })
+        && doc.nodes.iter().all(|node| {
+            if node.style.as_ref().is_some_and(|style| !style.valid()) {
+                return false;
+            }
+            let Block::Imported {
+                definition_id,
+                revision,
+                values,
+                ..
+            } = &node.block
+            else {
+                return true;
+            };
+            definitions
+                .iter()
+                .find(|definition| {
+                    definition.id == *definition_id && definition.revision == *revision
+                })
+                .is_some_and(|definition| {
+                    values.iter().all(|(key, value)| {
+                        value.len() <= 2000 && definition.fields.contains_key(key)
+                    })
+                })
+        })
 }
 
 // Cap dimensions within the DOM layout range used by the editor.
@@ -377,7 +438,6 @@ mod tests {
             .unwrap()
         };
         let original = variant(None, "Canvas", document.clone());
-        assert!(original.require_canvas().is_ok());
         let id = save(dir.path(), original).unwrap();
         let copy = save(dir.path(), variant(None, "Copy", document.clone())).unwrap();
         assert_ne!(id, copy);
@@ -397,6 +457,58 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(&saved[1]).unwrap()["document"],
+            document
+        );
+    }
+
+    // Round-trip a self-contained project without creating a palette store.
+    #[test]
+    fn saves_v4_theme_and_pinned_instances_without_a_library() {
+        let dir = tempfile::tempdir().unwrap();
+        let definition: Value = serde_json::from_str(include_str!(
+            "../../../examples/prototype-builder/pricing-card.wits-component.json"
+        ))
+        .unwrap();
+        let document = json!({
+            "version": 4,
+            "screen": { "width": 390, "height": 844 },
+            "theme": { "screen": "#ffffff", "surface": "#eeeeee", "text": "#222222",
+                       "muted": "#333333", "border": "#aaaaaa", "accent": "#444444",
+                       "onAccent": "#ffffff", "font": "mono" },
+            "definitions": [definition],
+            "nodes": [
+                { "x": 15, "y": 90, "width": 320, "style": { "fill": "screen" },
+                  "block": { "id": "one", "kind": "imported", "definitionId": "wits.pricing-card",
+                             "revision": 1, "values": { "plan": "Basic" } } },
+                { "x": -8, "y": 420, "width": 360, "height": 410,
+                  "block": { "id": "two", "kind": "imported", "definitionId": "wits.pricing-card",
+                             "revision": 1, "values": { "plan": "Pro" } } }
+            ]
+        });
+        let variant = |id, name, document| {
+            serde_json::from_value::<Variant>(json!({
+                "id": id, "name": name, "sourceUrl": null, "document": document
+            }))
+            .unwrap()
+        };
+        let snapshot = variant(None, "Original", document.clone());
+        assert!(snapshot.require_canvas().is_ok());
+        let id = save(dir.path(), snapshot).unwrap();
+        let copy = save(dir.path(), variant(None, "Copy", document.clone())).unwrap();
+        assert_ne!(id, copy);
+        let mut invalid = document.clone();
+        invalid["definitions"] = json!([]);
+        assert!(matches!(
+            save(dir.path(), variant(Some(id), "Original", invalid)),
+            Err(Error::InvalidDocument)
+        ));
+        let reopened = list(dir.path()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&reopened[0]).unwrap()["document"],
+            document
+        );
+        assert_eq!(
+            serde_json::to_value(&reopened[1]).unwrap()["document"],
             document
         );
     }
