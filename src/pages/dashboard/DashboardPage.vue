@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import WorkspaceIcon from "../../components/dashboard/WorkspaceIcon.vue";
+import WorkspaceIcon from "../../components/ui/WorkspaceIcon.vue";
 import { searchTools } from "../../utils/dashboard/tool-search";
 
 // The toolbar supplies the catalog filter, leaving the tool links available.

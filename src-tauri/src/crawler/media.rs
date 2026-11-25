@@ -9,13 +9,13 @@ use std::{
 
 use aes::Aes128;
 use cbc::cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
-use futures_util::{StreamExt, stream};
 use reqwest::{Client, Response, header};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 use uuid::Uuid;
+
+use crate::http_transfer::{output, valid_range};
 
 use super::{
     Error, Result,
@@ -339,29 +339,8 @@ pub(super) async fn download_with_size(
             _ => name,
         };
         let output = folder.join(name);
-        // Lock a separate reservation file to avoid simultaneous writers across app and CLI.
-        let digest = blake3::hash(
-            output
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_lowercase()
-                .as_bytes(),
-        );
-        let reservation = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(folder.join(format!(".wits-download-{digest}.lock")))
-            .map_err(|_| Error::File)?;
-        reservation.try_lock().map_err(|_| Error::OutputConflict)?;
-        if output.exists() && !request.overwrite {
-            return Err(Error::OutputConflict);
-        }
-        let file = tempfile::NamedTempFile::new_in(&folder)
-            .map_err(|_| Error::File)?
-            .into_temp_path();
+        let reservation = output::reserve(&output, request.overwrite).map_err(output_error)?;
+        let file = output::stage(&folder).map_err(output_error)?;
         let format = request.format.as_deref().unwrap_or("best");
         match kind {
             Kind::Direct => transfer.direct(response, file.as_ref(), &progress).await?,
@@ -406,17 +385,7 @@ pub(super) async fn download_with_size(
     if cancellation.is_cancelled() {
         return Err(Error::Cancelled);
     }
-    if request.overwrite {
-        file.persist(&output).map_err(|_| Error::File)?;
-    } else {
-        file.persist_noclobber(&output).map_err(|error| {
-            if error.error.kind() == std::io::ErrorKind::AlreadyExists {
-                Error::OutputConflict
-            } else {
-                Error::File
-            }
-        })?;
-    }
+    output::publish(file, &output, request.overwrite).map_err(output_error)?;
     Ok((output, size))
 }
 
@@ -654,48 +623,23 @@ impl Transfer {
         count: Option<u32>,
         progress: &(impl Fn(Progress) + Sync),
     ) -> Result<()> {
-        let parts = parts.into_iter();
-        let workspace =
-            tempfile::tempdir_in(output.parent().ok_or(Error::File)?).map_err(|_| Error::File)?;
-        let downloads = stream::iter(parts.enumerate())
-            .map(|(index, segment)| {
-                let path = workspace.path().join(index.to_string());
-                async move {
-                    let bytes = self.part(&segment, &path, total).await?;
-                    Ok::<_, Error>((path, bytes))
-                }
-            })
-            .buffered(self.workers);
-        tokio::pin!(downloads);
-        let mut file = tokio::fs::File::create(output)
-            .await
-            .map_err(|_| Error::File)?;
-        let mut completed = 0;
-        let mut saved_bytes = 0;
-        while let Some(part) = downloads.next().await {
-            let (path, bytes) = part?;
-            let mut part = tokio::fs::File::open(&path)
-                .await
-                .map_err(|_| Error::File)?;
-            tokio::io::copy(&mut part, &mut file)
-                .await
-                .map_err(|_| Error::File)?;
-            drop(part);
-            tokio::fs::remove_file(path)
-                .await
-                .map_err(|_| Error::File)?;
-            completed += 1;
-            saved_bytes += bytes;
-            progress(Progress {
-                bytes: saved_bytes,
-                total_bytes: total,
-                segments: completed,
-                total_segments: count,
-                ..Progress::default()
-            });
-        }
-        file.flush().await.map_err(|_| Error::File)?;
-        file.sync_all().await.map_err(|_| Error::File)
+        crate::http_transfer::assemble(
+            parts,
+            output,
+            self.workers,
+            Error::File,
+            |segment, path| async move { self.part(&segment, &path, total).await },
+            |bytes, completed| {
+                progress(Progress {
+                    bytes,
+                    total_bytes: total,
+                    segments: completed,
+                    total_segments: count,
+                    ..Progress::default()
+                })
+            },
+        )
+        .await
     }
 
     async fn part(&self, segment: &Segment, path: &Path, total: Option<u64>) -> Result<u64> {
@@ -736,20 +680,12 @@ impl Transfer {
     }
 }
 
-fn valid_range(response: &Response, start: u64, end: u64, total: Option<u64>) -> bool {
-    response.status() == reqwest::StatusCode::PARTIAL_CONTENT
-        && response
-            .headers()
-            .get(header::CONTENT_RANGE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.strip_prefix("bytes "))
-            .and_then(|value| value.split_once('/'))
-            .is_some_and(|(range, length)| {
-                range == format!("{start}-{end}")
-                    && length.parse::<u64>().ok().is_some_and(|length| {
-                        length > end && total.is_none_or(|total| total == length)
-                    })
-            })
+// Keep the existing media error contract at the shared output boundary.
+fn output_error(error: output::Error) -> Error {
+    match error {
+        output::Error::Conflict => Error::OutputConflict,
+        output::Error::File => Error::File,
+    }
 }
 
 fn select<'a>(variants: &'a [Variant], format: &str) -> Result<&'a Variant> {
@@ -762,7 +698,7 @@ fn select<'a>(variants: &'a [Variant], format: &str) -> Result<&'a Variant> {
 }
 
 /// Normalize filesystem names and avoid reserved Windows devices and trailing dots.
-pub(super) fn filename(value: &str) -> String {
+pub(crate) fn filename(value: &str) -> String {
     let name: String = value
         .chars()
         .take(150)

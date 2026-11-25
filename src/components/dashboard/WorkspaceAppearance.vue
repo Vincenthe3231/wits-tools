@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, ref, watch } from "vue";
 
-import WorkspaceIcon from "./WorkspaceIcon.vue";
+import WorkspaceIcon from "../ui/WorkspaceIcon.vue";
 
 type Appearance = "system" | "light" | "dark";
 const APPEARANCE_KEY = "wits-tools-appearance";
