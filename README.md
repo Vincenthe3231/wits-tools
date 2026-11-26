@@ -175,3 +175,13 @@ Report a failure from the action that owns it. Use `src/composables/use-notifica
 
 - If image paste fails in Source or Visual mode, show one error toast and leave the Markdown unchanged.
 - If draft recovery writes keep failing, show one warning toast and keep the recovery status visible. A successful write clears the status and allows a later outage to trigger a new toast.
+
+## Vault
+
+Open **Vault** from the sidebar to create a password-protected folder or locate an existing one. Choose a storage location outside the WITS Tools installation and app data folders. Keep a backup of the complete Vault folder while locked. On another installation, choose **Open existing Vault** and use the same password. Keep the password separately. Losing it makes both the Vault and its backup unreadable.
+
+**Add copy** keeps the source. **Move into Vault** commits the encrypted copy before removing the source and lists originals that could not be removed. **Export copy** writes a readable file or folder to a location you choose. File contents and original names are encrypted inside Vault.
+
+From **Windows Settings > Installed apps**, uninstall WITS Tools to open the Vault wizard. The default is to keep Vault encrypted. To decrypt all files, enter the password, choose a destination, and review the restored location before confirming removal of the encrypted Vault. To discard a Vault without its password, select **Permanently delete Vault** and confirm the folder. **Prepare to uninstall** inside WITS Tools opens the same choices. Quiet uninstall preserves the encrypted folder.
+
+Vault format v1 stores an age passphrase-encrypted X25519 identity, a BLAKE3-authenticated age catalog, and one age payload per file. The catalog holds the directory tree and a BLAKE3 digest of each encrypted payload. Keep the v1 reader and fixtures when introducing a later format.

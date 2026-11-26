@@ -1,10 +1,11 @@
 <!-- Hosts workspace navigation, retained tool sessions, and window-close confirmation. -->
 <script setup lang="ts">
-import { computed, nextTick, onScopeDispose, ref } from "vue";
+import { computed, defineAsyncComponent, nextTick, onMounted, onScopeDispose, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { crawler } from "./api/crawler";
 import { downloader } from "./api/downloader";
+import { cancelVaultTransfer, vaultAction } from "./api/vault";
 import AppToaster from "./components/AppToaster.vue";
 import { useWindowClose } from "./composables/use-window-close";
 import WorkspaceAppearance from "./components/dashboard/WorkspaceAppearance.vue";
@@ -19,6 +20,13 @@ type EditorLifecycle = "NotOpened" | "Active" | "Suspended";
 type CloseChoice = "save" | "discard" | "cancel";
 
 const route = useRoute();
+
+// Installer launches use a dedicated window view without normal workspace navigation.
+const VaultPage = defineAsyncComponent(() => import("./pages/vault/VaultPage.vue"));
+const installerWizard = ref(false);
+onMounted(async () => {
+  installerWizard.value = (await vaultAction({ kind: "status" }).catch(() => null))?.uninstall ?? false;
+});
 const editor = ref<InstanceType<typeof MarkdownEditorPage>>();
 
 // Keep search on the dashboard and derive tool names from the shared catalog.
@@ -78,8 +86,13 @@ function finishClosePrompt() {
 
 // Wait for the editor's close decision before cancelling native transfers and crawls.
 const closeError = useWindowClose(async () => {
+  await cancelVaultTransfer().catch(() => undefined);
+  if (installerWizard.value) {
+    await vaultAction({ kind: "finishUninstall", proceed: false });
+    return false;
+  }
   if (editor.value && !(await editor.value.requestClose(askClose))) return false;
-  await Promise.allSettled([crawler.shutdown(), downloader.shutdown()]);
+  await Promise.allSettled([crawler.shutdown(), downloader.shutdown(), vaultAction({ kind: "lock" })]);
   return true;
 });
 </script>
@@ -88,7 +101,8 @@ const closeError = useWindowClose(async () => {
   <!-- Keep notifications mounted across dashboard and tool routes. -->
   <AppToaster />
 
-  <div class="workspace-shell" :class="{ 'workspace-shell-collapsed': !sidebarOpen }">
+  <VaultPage v-if="installerWizard" installer />
+  <div v-else class="workspace-shell" :class="{ 'workspace-shell-collapsed': !sidebarOpen }">
     <!-- The same navigation stays available as the user moves between tools. -->
     <NavigationTransition kind="sidebar">
       <WorkspaceSidebar

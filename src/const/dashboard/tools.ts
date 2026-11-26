@@ -31,4 +31,12 @@ export const tools = [
     keywords: "download file zip rar exe installer accelerate capture",
     icon: "arrow",
   },
+  // Use the shared catalog so Vault appears in sidebar navigation and search.
+  {
+    routeName: "vault",
+    name: "Vault",
+    description: "Protect files and folders with a password.",
+    keywords: "encrypt lock secure private files folders",
+    icon: "lock",
+  },
 ] as const;
