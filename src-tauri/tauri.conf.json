@@ -18,12 +18,21 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob: https: http:; object-src 'none'; base-uri 'none'; frame-src 'none'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/vault-uninstall.nsh"
+      },
+      "wix": {
+        "fragmentPaths": ["windows/vault-uninstall.wxs"],
+        "componentRefs": ["VaultUninstallEntry"]
+      }
+    },
     "resources": {
       "resources/crawler-browser/": "crawler-browser/",
       "resources/crawler-extensions/": "crawler-extensions/"

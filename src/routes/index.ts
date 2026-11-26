@@ -27,5 +27,11 @@ export const router = createRouter({
       name: "downloader",
       component: () => import("../pages/downloader/DownloaderPage.vue"),
     },
+    // Load the Vault interface only when it is opened.
+    {
+      path: "/tools/vault",
+      name: "vault",
+      component: () => import("../pages/vault/VaultPage.vue"),
+    },
   ],
 });

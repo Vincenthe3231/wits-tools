@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Register the user-facing removal command without requiring MSI-authored dialogs. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <?if $(sys.BUILDARCH)="x86"?>
+    <?define RegistryWin64 = "no" ?>
+    <?define VaultSystemFolder = "[SystemFolder]" ?>
+  <?else?>
+    <?define RegistryWin64 = "yes" ?>
+    <?define VaultSystemFolder = "[System64Folder]" ?>
+  <?endif?>
+  <Fragment>
+    <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="VaultUninstallEntry" Guid="07D385C3-3B3E-4849-A3F2-3A486C6E3131" Win64="$(var.RegistryWin64)">
+        <RegistryKey Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\WitsToolsVault">
+          <RegistryValue Name="DisplayName" Type="string" Value="[ProductName] (MSI)" KeyPath="yes" />
+          <RegistryValue Name="DisplayVersion" Type="string" Value="[ProductVersion]" />
+          <RegistryValue Name="Publisher" Type="string" Value="[Manufacturer]" />
+          <RegistryValue Name="DisplayIcon" Type="string" Value="[INSTALLDIR]wits-tools.exe" />
+          <RegistryValue Name="InstallLocation" Type="string" Value="[INSTALLDIR]" />
+          <RegistryValue Name="UninstallString" Type="string" Value="&quot;[INSTALLDIR]wits-tools.exe&quot; --vault-uninstall-msi [ProductCode]" />
+          <RegistryValue Name="QuietUninstallString" Type="string" Value="&quot;$(var.VaultSystemFolder)msiexec.exe&quot; /x [ProductCode] /qn" />
+          <RegistryValue Name="NoModify" Type="integer" Value="1" />
+          <RegistryValue Name="NoRepair" Type="integer" Value="1" />
+        </RegistryKey>
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

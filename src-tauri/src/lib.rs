@@ -4,6 +4,7 @@ pub mod crawler;
 mod downloader;
 mod http_transfer;
 mod markdown_editor;
+mod vault;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -43,6 +44,9 @@ pub fn run() {
         downloader::downloader_open_capture,
         downloader::downloader_confirm_capture,
         downloader::downloader_shutdown,
+        // Keep Vault transfers and installer handoff in the native process.
+        vault::vault_action,
+        vault::vault_cancel,
     ];
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -50,6 +54,7 @@ pub fn run() {
         .manage(markdown_editor::EditorState::default())
         .manage(crawler::commands::DesktopState::default())
         .manage(downloader::StateData::default())
+        .manage(vault::VaultState::new(vault::Launch::detect()))
         // Only the workspace can invoke commands. Remote capture windows have no app IPC.
         .invoke_handler(move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
             if invoke.message.webview().label() != "main" {
