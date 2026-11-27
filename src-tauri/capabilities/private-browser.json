@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "private-browser",
+  "description": "Allows the bundled private browser toolbar to observe its native controls",
+  "webviews": ["private-browser"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

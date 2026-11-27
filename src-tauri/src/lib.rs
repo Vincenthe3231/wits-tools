@@ -1,5 +1,6 @@
 //! Registers the native commands and plugins for the desktop workspace.
 mod api_tester;
+mod browser;
 pub mod crawler;
 mod downloader;
 mod http_transfer;
@@ -8,6 +9,14 @@ mod vault;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let browser_handle: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+        browser::browser_open,
+        browser::browser_prepare_close,
+        browser::browser_cancel_close,
+        browser::browser_finish_close,
+    ];
+    let browser_toolbar: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+        tauri::generate_handler![browser::browser_toolbar];
     let handle: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
         markdown_editor::commands::editor_open,
         markdown_editor::commands::editor_save,
@@ -55,15 +64,28 @@ pub fn run() {
         .manage(crawler::commands::DesktopState::default())
         .manage(downloader::StateData::default())
         .manage(vault::VaultState::new(vault::Launch::detect()))
+        .setup(|app| {
+            browser::recover(app.handle());
+            Ok(())
+        })
         // Only the workspace can invoke commands. Remote capture windows have no app IPC.
         .invoke_handler(move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+            if invoke.message.webview().label() == browser::LABEL {
+                return browser_toolbar(invoke);
+            }
             if invoke.message.webview().label() != "main" {
                 invoke
                     .resolver
                     .reject("Application commands are unavailable in the capture browser.");
                 return true;
             }
-            handle(invoke)
+            match invoke.message.command() {
+                "browser_open"
+                | "browser_prepare_close"
+                | "browser_cancel_close"
+                | "browser_finish_close" => browser_handle(invoke),
+                _ => handle(invoke),
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

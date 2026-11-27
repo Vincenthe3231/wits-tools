@@ -39,4 +39,12 @@ export const tools = [
     keywords: "encrypt lock secure private files folders",
     icon: "lock",
   },
+  // Keep the private browser discoverable through the same navigation and search.
+  {
+    routeName: "browser",
+    name: "Private Browser",
+    description: "Browse in a separate window that clears its local data when closed.",
+    keywords: "browser web website tabs private cookies session downloads",
+    icon: "globe",
+  },
 ] as const;

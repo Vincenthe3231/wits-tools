@@ -33,5 +33,11 @@ export const router = createRouter({
       name: "vault",
       component: () => import("../pages/vault/VaultPage.vue"),
     },
+    // Keep the browser launcher separate from the native browser window.
+    {
+      path: "/tools/browser",
+      name: "browser",
+      component: () => import("../pages/browser/BrowserLauncher.vue"),
+    },
   ],
 });

@@ -3,6 +3,7 @@
 import { computed, defineAsyncComponent, nextTick, onMounted, onScopeDispose, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import { browser } from "./api/browser";
 import { crawler } from "./api/crawler";
 import { downloader } from "./api/downloader";
 import { cancelVaultTransfer, vaultAction } from "./api/vault";
@@ -84,14 +85,21 @@ function finishClosePrompt() {
   resolveClose = undefined;
 }
 
-// Wait for the editor's close decision before cancelling native transfers and crawls.
+// Resolve both window decisions before discarding drafts or stopping active tools.
 const closeError = useWindowClose(async () => {
-  await cancelVaultTransfer().catch(() => undefined);
   if (installerWizard.value) {
+    await cancelVaultTransfer().catch(() => undefined);
     await vaultAction({ kind: "finishUninstall", proceed: false });
     return false;
   }
-  if (editor.value && !(await editor.value.requestClose(askClose))) return false;
+  if (!(await browser.prepareClose())) return false;
+  try {
+    if (editor.value && !(await editor.value.requestClose(askClose))) return false;
+    await browser.finishClose();
+  } finally {
+    await browser.cancelClose().catch(() => undefined);
+  }
+  await cancelVaultTransfer().catch(() => undefined);
   await Promise.allSettled([crawler.shutdown(), downloader.shutdown(), vaultAction({ kind: "lock" })]);
   return true;
 });

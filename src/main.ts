@@ -9,7 +9,10 @@ import "./styles/form-grid.css";
 // Load the shared presets once so all tools can use the same interaction timing.
 import "./styles/navigation-motion.css";
 
-const app = createApp(App).use(router);
+// The browser window mounts its own toolbar without starting workspace tools.
+const browserWindow = new URLSearchParams(location.search).has("private-browser");
+const root = browserWindow ? (await import("./pages/browser/BrowserWindow.vue")).default : App;
+const app = createApp(root);
 // Report otherwise unhandled Vue failures without displaying their diagnostic details.
 app.config.errorHandler = (cause, _instance, context) => {
   console.error("Unexpected WITS Tools failure", context, cause);
@@ -22,4 +25,9 @@ app.config.errorHandler = (cause, _instance, context) => {
 };
 
 // Mount after the initial route settles so the correct tool owns the first interaction.
-void router.isReady().then(() => app.mount("#app"));
+if (browserWindow) {
+  app.mount("#app");
+} else {
+  app.use(router);
+  void router.isReady().then(() => app.mount("#app"));
+}

@@ -123,6 +123,14 @@ bun run tauri dev
 
 On Windows, the release executable is `src-tauri/target/release/wits-tools.exe`. The bundled release also writes the NSIS setup executable and MSI installer under `src-tauri/target/release/bundle/`. The release builds the frontend as one Vite application.
 
+## Private Browser
+
+Open **Private Browser** from the dashboard or sidebar on Windows. Enter an address in the separate window. Tabs share site sign-ins until you close the browser. Closing the last tab asks first, then replaces it with a blank tab in the same session.
+
+Closing the browser window clears its own cookies, site storage, cache, and history after WebView2 releases its files. WITS Tools retries unfinished cleanup the next time it starts. If a website is open or a download is unfinished, the window asks before closing. Quitting WITS Tools uses the same check alongside the Markdown Editor save prompt.
+
+Website downloads ask where to save the file. Completed files stay at the chosen destination. Confirming browser close cancels unfinished transfers and removes their partial files.
+
 ## Markdown images
 
 In Visual mode, use **Insert image** to choose a local PNG, JPEG, GIF, or WebP, or paste an image from the clipboard. The limit is 16 MiB per image. Select an image and press **Ctrl+C** to copy it. Use the block handle to drag an image block, or use **Block actions** to move it with the keyboard.
