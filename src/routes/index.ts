@@ -3,6 +3,7 @@ import { createRouter, createWebHashHistory } from "vue-router";
 
 import DashboardPage from "../pages/dashboard/DashboardPage.vue";
 import MarkdownEditorPage from "../pages/markdown-editor/MarkdownEditorPage.vue";
+import VisualEditorPage from "../pages/visual-editor/VisualEditorPage.vue";
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -11,6 +12,7 @@ export const router = createRouter({
     // Keep the existing Markdown location available to bookmarks and retained sessions.
     { path: "/tools/editor", name: "editor", component: () => import("../pages/editor/EditorHomePage.vue") },
     { path: "/tools/markdown", name: "markdown-editor", component: MarkdownEditorPage },
+    { path: "/tools/visual", name: "visual-editor", component: VisualEditorPage },
     // Load the API workspace when the user first opens it.
     {
       path: "/tools/api-tester",

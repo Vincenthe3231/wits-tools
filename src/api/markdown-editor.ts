@@ -38,7 +38,7 @@ export class EditorFailure extends Error {
 }
 
 // Attach operation context once and leave notification ownership to the caller.
-async function editorInvoke<T>(
+export async function editorInvoke<T>(
   operation: EditorOperation,
   command: string,
   args?: Parameters<typeof invoke>[1],

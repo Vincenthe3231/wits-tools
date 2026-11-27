@@ -191,12 +191,12 @@ fn replace(staged: NamedTempFile, path: &Path, overwrite: bool) -> EditorResult<
 }
 
 /// Use the same atomic staging as document saves for recovery snapshots.
-pub(super) fn write_recovery(path: &Path, bytes: &[u8]) -> EditorResult<()> {
+pub(crate) fn write_recovery(path: &Path, bytes: &[u8]) -> EditorResult<()> {
     replace(stage(path, bytes)?, path, true)
 }
 
 /// Publish a new attachment without replacing a file created by another process.
-pub(super) fn write_attachment(path: &Path, bytes: &[u8]) -> EditorResult<()> {
+pub(crate) fn write_attachment(path: &Path, bytes: &[u8]) -> EditorResult<()> {
     replace(stage(path, bytes)?, path, false)
 }
 

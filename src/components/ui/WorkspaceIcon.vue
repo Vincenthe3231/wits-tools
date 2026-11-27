@@ -2,7 +2,8 @@
 <script setup lang="ts">
 // Icons inherit the label and color of the control or surface around them.
 defineProps<{
-  name: "brand" | "home" | "document" | "search" | "arrow" | "sun" | "theme" | "sidebar" | "globe" | "trash" | "lock" | "reload";
+  name: "brand" | "home" | "document" | "search" | "arrow" | "sun" | "theme" | "sidebar" | "globe" | "trash" | "lock" | "reload"
+    | "new-document" | "folder" | "chevron" | "list" | "grid" | "more" | "pin" | "visual-document" | "house";
 }>();
 </script>
 
@@ -23,6 +24,16 @@ defineProps<{
       d="M3.5 4h7v7h-7zM13.5 4h7v7h-7zM3.5 14h7v6.5h-7zM13.5 14h7v6.5h-7z"
     />
     <path v-else-if="name === 'document'" d="M6 3.5h8l4 4v13H6zM14 3.5v4h4M9 12h6m-6 4h6" />
+    <!-- Use the same line weight for document types and library actions. -->
+    <path v-else-if="name === 'new-document'" d="M13 21H5V3h9l5 5v4M14 3v5h5m-4 10h7m-3.5-3.5v7" />
+    <path v-else-if="name === 'house'" d="m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9" />
+    <path v-else-if="name === 'visual-document'" d="M6 3.5h8l4 4v13H6zM14 3.5v4h4M9 16l3-5 3 5z" />
+    <path v-else-if="name === 'folder'" d="M3 19V6h6l2 2h10v11z" />
+    <path v-else-if="name === 'chevron'" d="m6 9 6 6 6-6" />
+    <path v-else-if="name === 'list'" d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />
+    <path v-else-if="name === 'grid'" d="M4 4h6v6H4zm10 0h6v6h-6zM4 14h6v6H4zm10 0h6v6h-6z" />
+    <path v-else-if="name === 'more'" d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3" />
+    <path v-else-if="name === 'pin'" d="m15 3 6 6-4 1-3 3v4l-2 2-7-7 2-2h4l3-3zM8 16l-5 5" />
     <path
       v-else-if="name === 'search'"
       d="M20 20l-4.25-4.25M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"

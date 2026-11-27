@@ -1,196 +1,539 @@
-/* Lays out Editor home with the workspace palette and shared focus treatment. */
+/* Gives Editor home its library layout, with shared workspace colors and controls. */
 
-/* Keep file creation prominent and allow the header to wrap in narrow windows. */
-.editor-home {
+/* Keep the shell controls on the same line as Home without adding a second header band. */
+.editor-home-shell {
+  --library-line: color-mix(in srgb, var(--text-muted) 24%, transparent);
+  --library-muted-surface: color-mix(in srgb, var(--surface-toolbar) 48%, var(--surface-editor));
+  background: var(--surface-editor);
+}
+
+.editor-home-shell .workspace-stage {
+  position: relative;
+}
+
+.editor-home-shell .workspace-header {
+  position: absolute;
+  inset-block-start: 0.85rem;
+  inset-inline-end: clamp(1rem, 3vw, 2rem);
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  backdrop-filter: none;
+}
+
+.editor-home-shell .workspace-sidebar {
+  gap: 1.45rem;
+  min-height: 0;
+  padding-block: 1.15rem;
+  background: var(--library-muted-surface);
+  overflow: auto;
+}
+
+/* Sidebar search, location, and pinned files form a single compact navigation column. */
+.editor-navigation {
   display: grid;
-  align-content: start;
-  gap: 1.25rem;
-  min-height: 100%;
-  max-width: 72rem;
-  margin-inline: auto;
-  padding: clamp(1rem, 4vw, 2.75rem);
-}
-
-.editor-home-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  border-radius: 0.75rem;
-  background: var(--surface-toolbar);
+  min-width: 0;
 }
 
-.editor-home-header > svg {
-  width: 1.65rem;
-  height: 1.65rem;
-  color: var(--accent-strong);
+.editor-navigation nav {
+  display: grid;
+  gap: 0.125rem;
 }
 
-.editor-home-header h1 {
-  flex: 1;
-  margin: 0;
-  font-size: clamp(1.5rem, 4vw, 2rem);
-  font-weight: 700;
+.editor-navigation .workspace-link {
+  min-height: 2.25rem;
 }
 
-.editor-home-actions,
-.editor-library-tools,
-.editor-layout-switch {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.editor-home-actions button,
-.editor-layout-switch button {
-  min-height: 2.75rem;
-}
-
-.editor-resume {
-  padding: 0.5rem;
-  color: var(--accent-strong);
-}
-
-/* Give the search field first claim on spare width and keep both layout choices visible. */
-.editor-library-tools .workspace-search {
-  flex: 1 1 13rem;
-  width: auto;
-}
-
-.editor-layout-switch button[aria-pressed="true"] {
-  background: var(--surface-selected);
-  color: var(--text-primary);
-  box-shadow: inset 0 -2px var(--accent-strong);
-}
-
-.editor-home-group h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
-  font-weight: 650;
-}
-
-.editor-home-empty {
-  margin: 0;
-  padding: 0.85rem 0;
+.editor-all-tools {
   color: var(--text-muted);
 }
 
-/* Share one item structure across layouts and keep actions individually focusable. */
-.editor-shortcuts {
-  display: grid;
+.editor-library-search {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  min-height: 2.35rem;
+  padding-inline: 0.6rem;
+  border: 1px solid var(--library-line);
+  border-radius: 0.5rem;
+  background: var(--surface-editor);
+  color: var(--text-muted);
+}
+
+.editor-library-search:focus-within {
+  border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+}
+
+.editor-library-search input {
+  width: 100%;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.editor-library-search input:focus-visible {
+  outline: none;
+}
+
+.editor-library-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.editor-pinned {
+  min-width: 0;
+  padding-block-start: 0.85rem;
+  border-top: 1px solid var(--library-line);
+}
+
+.editor-pinned h2,
+.editor-pinned p {
+  margin: 0 0 0.4rem;
+  padding-inline: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.editor-pinned h2 {
+  font-weight: 650;
+}
+
+.editor-pinned ul {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.editor-shortcuts-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-}
-
-.editor-shortcuts li {
-  position: relative;
+.editor-pinned li {
   display: flex;
   min-width: 0;
   align-items: center;
+}
+
+/* Place the creation tile above Recent and leave room for the shell controls. */
+.editor-home {
+  display: grid;
+  align-content: start;
+  gap: 1.25rem;
+  min-height: 100%;
+  padding: 1rem clamp(1rem, 3vw, 2rem) 2rem;
+  container-type: inline-size;
+}
+
+.editor-home:focus {
+  outline: none;
+}
+
+.editor-home-heading {
+  min-height: 2.5rem;
+  padding-inline-end: 7rem;
+}
+
+.editor-home-heading h1 {
+  margin: 0;
+  font-size: clamp(1.65rem, 3.5vw, 2.1rem);
+  font-weight: 710;
+  line-height: 1.2;
+}
+
+.editor-home-actions,
+.editor-recent-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.editor-home-actions .editor-create-tile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  width: min(18.5rem, 100%);
+  min-height: 4.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--library-line);
   border-radius: 0.75rem;
-  background: color-mix(in srgb, var(--surface-editor) 62%, var(--surface-toolbar));
+  background: var(--library-muted-surface);
+  text-align: start;
 }
 
-.editor-shortcut {
+.editor-home-actions .editor-create-tile:hover:not(:disabled),
+.editor-home-actions .editor-create-tile[data-state="open"] {
+  border-color: var(--accent-strong);
+  background: var(--surface-toolbar);
+}
+
+.editor-create-icon {
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.65rem;
+  background: var(--accent-strong);
+  color: var(--text-on-accent);
+}
+
+.editor-create-icon svg {
+  width: 1.45rem;
+  height: 1.45rem;
+}
+
+.editor-create-label {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.editor-create-label strong {
+  font-size: 1rem;
+}
+
+.editor-create-label small,
+.editor-create-chevron {
+  color: var(--text-muted);
+}
+
+.editor-open-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+}
+
+.editor-resume {
+  padding: 0.35rem 0.25rem;
+  color: var(--accent-strong);
+  font-size: 0.85rem;
+}
+
+/* Keep the only view switch against the right edge of the Recent toolbar. */
+.editor-home-group {
+  min-width: 0;
+}
+
+.editor-recent-toolbar {
+  justify-content: space-between;
+  min-height: 3rem;
+  border-bottom: 1px solid var(--library-line);
+}
+
+.editor-recent-toolbar h2 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 680;
+}
+
+.editor-recent-toolbar .editor-library-search {
+  flex: 1 1 9rem;
+  max-width: 16rem;
+  margin-inline-start: auto;
+}
+
+.editor-layout-switch {
+  display: flex;
+  gap: 0.125rem;
+  margin-inline-start: auto;
+  padding: 0.2rem;
+  border-radius: 0.55rem;
+  background: var(--library-muted-surface);
+}
+
+.editor-layout-switch button,
+.editor-shortcut-menu {
+  display: grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.editor-layout-switch button[aria-pressed="true"] {
+  border-color: var(--accent-strong);
+  background: var(--surface-editor);
+  color: var(--accent-strong);
+  box-shadow: none;
+}
+
+.editor-layout-switch svg,
+.editor-shortcut-menu svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+/* Use aligned headers and quiet dividers so rows are easy to scan. */
+.editor-documents {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.875rem;
+}
+
+.editor-documents th,
+.editor-documents td {
+  padding: 0.45rem 0.25rem;
+  border-bottom: 1px solid var(--library-line);
+  text-align: start;
+  vertical-align: middle;
+}
+
+.editor-documents th {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 620;
+}
+
+.editor-documents th:first-child {
+  padding-inline-start: 0.55rem;
+}
+
+.editor-documents tbody tr:hover,
+.editor-documents tbody tr:focus-within {
+  background: var(--library-muted-surface);
+}
+
+.editor-location-column {
+  width: 22%;
+}
+
+.editor-created-column,
+.editor-opened-column {
+  width: 5.25rem;
+}
+
+.editor-actions-column {
+  width: 2.65rem;
+}
+
+.editor-document-name,
+.editor-pinned-file,
+.editor-grid-document {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  flex: 1;
+  gap: 0.5rem;
   min-width: 0;
-  min-height: 3rem;
-  padding: 0.65rem 0.8rem;
+  width: 100%;
+  padding: 0.35rem;
   border: 0;
-  border-radius: inherit;
   background: transparent;
   text-align: start;
 }
 
-.editor-shortcut > svg,
-.editor-thumbnail > svg {
-  width: 1.3rem;
-  height: 1.3rem;
-  flex: none;
+.editor-document-name,
+.editor-pinned-file {
+  min-height: 2.35rem;
+}
+
+.editor-pinned-file {
+  flex: 1;
+  font-size: 0.82rem;
+}
+
+.editor-pinned-file svg {
   color: var(--accent-strong);
 }
 
-.editor-shortcut-label {
+.editor-type-icon {
   display: grid;
-  min-width: 0;
+  flex: none;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.4rem;
+  background: var(--surface-toolbar);
+  color: var(--accent-strong);
 }
 
-.editor-shortcut-label strong,
-.editor-shortcut-label small {
+.editor-type-visual {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.editor-name-label,
+.editor-grid-caption {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.editor-name-label strong,
+.editor-grid-caption strong,
+.editor-grid-caption small,
+.editor-pinned-file span,
+.editor-folder span,
+.editor-compact-location {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.editor-shortcut-label small {
+.editor-pinned-file span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.editor-name-label strong,
+.editor-grid-caption strong {
+  font-weight: 620;
+}
+
+.editor-folder {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
   color: var(--text-muted);
 }
 
-.editor-shortcut-menu {
-  flex: none;
-  min-width: 2.25rem;
-  min-height: 2.25rem;
-  margin-inline-end: 0.35rem;
+.editor-folder svg,
+.editor-document-name .editor-pin-mark {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
-/* Preview saved content on an inset paper surface without changing the shortcut semantics. */
-.editor-shortcuts-grid .editor-shortcut {
+.editor-compact-location {
+  display: none;
+  color: var(--text-muted);
+}
+
+/* Keep the gallery distinct from the table with inset document previews. */
+.editor-document-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.85rem 0;
+  list-style: none;
+}
+
+.editor-document-grid li {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--library-line);
+  border-radius: 0.65rem;
+}
+
+.editor-grid-document {
   flex-direction: column;
   align-items: stretch;
-  padding: 0.5rem;
+  padding: 0.45rem;
+  border-radius: inherit;
 }
 
-.editor-shortcuts-grid .editor-shortcut-label {
+.editor-grid-caption {
   padding: 0.2rem 2rem 0.35rem 0.35rem;
 }
 
-.editor-shortcuts-grid .editor-shortcut-menu {
+.editor-grid-caption small {
+  color: var(--text-muted);
+}
+
+.editor-document-grid .editor-shortcut-menu {
   position: absolute;
-  inset-inline-end: 0.15rem;
-  inset-block-end: 0.5rem;
+  inset-inline-end: 0.35rem;
+  inset-block-end: 0.45rem;
 }
 
 .editor-thumbnail {
   display: grid;
   place-items: center;
   overflow: hidden;
-  height: 6rem;
+  height: 7.25rem;
   padding: 0.65rem;
-  border-radius: 0.5rem;
+  border-radius: 0.45rem;
+  background: var(--library-muted-surface);
+  color: var(--accent-strong);
+}
+
+.editor-preview-paper {
+  display: grid;
+  gap: 0.11rem;
+  width: min(100%, 9rem);
+  min-height: 5.2rem;
+  padding: 0.55rem;
+  overflow: hidden;
+  border: 1px solid var(--library-line);
+  border-radius: 0.25rem;
   background: var(--surface-editor);
-}
-
-.editor-thumbnail > div {
-  width: 100%;
-  overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: 0.69rem;
 }
 
-.editor-thumbnail p {
-  margin: 0 0 0.15rem;
-  text-overflow: ellipsis;
+.editor-preview-paper span {
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.editor-thumbnail p:first-child {
+.editor-preview-paper span:first-child {
   color: var(--text-primary);
   font-weight: 650;
 }
 
-/* Menus live in a portal so the workspace never clips them. */
+.editor-home-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+  padding: 2.5rem 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.editor-home-empty strong {
+  margin-top: 0.25rem;
+  color: var(--text-primary);
+}
+
+/* Reflow metadata before labels or actions collide in narrow content areas. */
+@container (max-width: 33rem) {
+  .editor-created-column {
+    display: none;
+  }
+}
+
+@container (max-width: 25rem) {
+  .editor-location-column {
+    display: none;
+  }
+
+  .editor-compact-location {
+    display: block;
+  }
+
+  .editor-opened-column {
+    width: 4.75rem;
+  }
+}
+
+@media (max-width: 680px) {
+  .editor-home-shell .workspace-sidebar {
+    align-items: start;
+    gap: 0.65rem;
+    padding-block: 0.65rem;
+    max-height: 34dvh;
+  }
+
+  .editor-navigation {
+    flex: 1 1 14rem;
+    gap: 0.35rem;
+  }
+
+  .editor-navigation nav {
+    display: flex;
+  }
+
+  .editor-pinned {
+    padding-block-start: 0.25rem;
+  }
+}
+
+/* Shared Editor menus use a portal and remain above either workspace layout. */
 .editor-menu {
   z-index: 20;
   min-width: 9rem;

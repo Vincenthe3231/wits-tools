@@ -1,0 +1,165 @@
+/* Styles the Visual document with the shared workspace surfaces and type. */
+
+/* Separate file commands from document formatting and keep both rows flexible. */
+.visual-document {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.visual-file-toolbar,
+.visual-format-toolbar,
+.visual-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.visual-file-toolbar,
+.visual-format-toolbar {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--surface-selected);
+  background: var(--surface-toolbar);
+}
+
+.visual-format-toolbar {
+  background: var(--surface-editor);
+}
+
+.visual-file-name {
+  display: grid;
+  min-width: min(8rem, 100%);
+  flex: 1 1 8rem;
+  overflow: hidden;
+}
+
+.visual-file-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visual-file-name small {
+  color: var(--text-muted);
+}
+
+.visual-format-toolbar button[aria-pressed="true"] {
+  color: var(--text-primary);
+  background: var(--surface-selected);
+  box-shadow: inset 0 -2px var(--accent-strong);
+}
+
+.visual-notices {
+  padding: 0.5rem 0.75rem;
+  background: var(--status-warning-surface);
+  color: var(--status-warning-text);
+}
+
+.visual-notices p {
+  margin: 0;
+}
+
+/* Let the prose scroll inside a readable column. Wide tables fit the document area. */
+.visual-document-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.visual-document-body {
+  max-width: 48rem;
+  min-height: 100%;
+  margin-inline: auto;
+}
+
+.visual-document-body :deep(.tiptap) {
+  min-height: 55vh;
+  padding: clamp(1rem, 5vw, 3rem);
+  outline: none;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+
+.visual-document-body :deep(.tiptap:focus-visible) {
+  box-shadow: inset 2px 0 var(--accent-strong);
+}
+
+.visual-document-body :deep(h1),
+.visual-document-body :deep(h2),
+.visual-document-body :deep(h3) {
+  margin: 1em 0 0.35em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.visual-document-body :deep(h1) { font-size: 2rem; }
+.visual-document-body :deep(h2) { font-size: 1.5rem; }
+.visual-document-body :deep(h3) { font-size: 1.2rem; }
+
+.visual-document-body :deep(p) { margin: 0.4em 0; }
+.visual-document-body :deep(ul) { list-style: disc; }
+.visual-document-body :deep(ol) { list-style: decimal; }
+.visual-document-body :deep(ul),
+.visual-document-body :deep(ol) { padding-inline-start: 1.6rem; }
+
+.visual-document-body :deep(ul[data-type="taskList"]) {
+  padding-inline-start: 0;
+  list-style: none;
+}
+
+.visual-document-body :deep(li[data-type="taskItem"]) {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.visual-document-body :deep(blockquote) {
+  margin-inline: 0;
+  padding-inline-start: 0.85rem;
+  border-inline-start: 3px solid var(--accent-strong);
+}
+
+.visual-document-body :deep(code) {
+  font-family: var(--font-code);
+  background: var(--surface-toolbar);
+}
+
+.visual-document-body :deep(pre) {
+  overflow: auto;
+  padding: 0.7rem;
+  background: var(--surface-toolbar);
+}
+
+.visual-document-body :deep(a) {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.visual-document-body :deep(img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-block: 0.7rem;
+}
+
+.visual-document-body :deep(table) {
+  width: 100%;
+  margin-block: 0.9rem;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.visual-document-body :deep(th),
+.visual-document-body :deep(td) {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--accent-strong);
+  text-align: start;
+  vertical-align: top;
+}
+
+.visual-document-body :deep(th),
+.visual-document-body :deep(.selectedCell) {
+  background: var(--surface-toolbar);
+}

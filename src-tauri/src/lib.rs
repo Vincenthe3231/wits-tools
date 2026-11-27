@@ -6,6 +6,7 @@ mod downloader;
 mod http_transfer;
 mod markdown_editor;
 mod vault;
+mod visual_editor;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -28,6 +29,12 @@ pub fn run() {
         markdown_editor::commands::editor_recovery_info,
         markdown_editor::commands::editor_restore,
         markdown_editor::commands::editor_update_recovery,
+        visual_editor::visual_pick_file,
+        visual_editor::editor_created_times,
+        visual_editor::visual_open,
+        visual_editor::visual_save,
+        visual_editor::visual_read_draft,
+        visual_editor::visual_write_draft,
         // Keep HTTP execution behind the API Tester command.
         api_tester::api_tester_send,
         // Keep crawls, media transfers, and capture sessions behind typed native commands.

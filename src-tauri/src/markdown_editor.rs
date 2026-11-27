@@ -6,11 +6,13 @@ mod images;
 mod package;
 mod recovery;
 
+// Let the Visual document tool reuse the editor's native errors and atomic file writers.
+pub(crate) use error::{EditorError, EditorErrorCode, EditorResult};
+pub(crate) use files::{write_attachment, write_recovery};
+
 use std::{path::PathBuf, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
-
-use error::{EditorError, EditorErrorCode, EditorResult};
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

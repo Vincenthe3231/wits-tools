@@ -133,7 +133,7 @@ Website downloads ask where to save the file. Completed files stay at the chosen
 
 ## Markdown images
 
-Open **Editor** from the dashboard or sidebar. **New** opens Markdown Editor, and **Open file** uses the native Markdown picker. Use **Recent** and **Pinned** to reopen files, and switch between List and Grid to see filenames or saved text previews. If a file moves, use **Locate file** from its shortcut.
+Open **Editor** from the dashboard or sidebar. **New** offers Markdown Editor and Visual Editor, and **Open file** accepts both local formats. Use **Recent** and **Pinned** to reopen files, and switch between List and Grid to see filenames or saved text previews. If a file moves, use **Locate file** from its shortcut.
 
 In Formatted, use **Insert image** to choose a local PNG, JPEG, GIF, or WebP, or paste an image from the clipboard. The limit is 16 MiB per image. Select an image and press **Ctrl+C** to copy it. Use the block handle to drag an image block, or use **Block actions** to move it with the keyboard.
 
@@ -142,6 +142,10 @@ On save, imported images go into a `wits-images/` folder beside the Markdown fil
 In Source mode, paste a clipboard image with **Ctrl+V** to insert its Markdown reference at the cursor. You can also write a relative reference such as `![Screenshot](./screenshots/login.png)` for an image already inside the document folder. Switch to Visual to preview it. When moving or saving a copy of the Markdown to another folder, copy any manually linked image folders yourself.
 
 Use **Export package** from Source or Formatted to write a copy of the current Markdown, including unsaved edits. For `Implementation Plan.md`, the selected destination receives an `Implementation_Plan/` folder containing `Implementation Plan.md` and an `img/` folder. The export copies local Markdown image references, including locally linked screenshots and staged clipboard images, and updates the paths inside the copy. Move the whole package when sharing it.
+
+## Visual documents
+
+Choose **New > Visual Editor** to write formatted prose, add a checklist, edit a table, or insert a local image. Use **Save** or **Save As** to choose a `.witsdoc` file. Embedded PNG, JPEG, GIF, and WebP images travel with the file. Visual recovery holds an unsaved draft separately from Markdown. If the original file changes outside the app, use **Save As** to keep your edits.
 
 ## Crawler and Media Downloads
 

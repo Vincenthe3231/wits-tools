@@ -1,5 +1,8 @@
 /** Keeps the local Editor shortcuts and saved document previews available across routes. */
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
+import { isTauri } from "@tauri-apps/api/core";
+
+import { editorCreatedTimes } from "../../api/visual-editor";
 
 const STORAGE_KEY = "wits-editor-library";
 const RECENT_LIMIT = 30;
@@ -10,6 +13,7 @@ export interface EditorShortcut {
   folder: string;
   excerpt: string[];
   opened: number;
+  created?: number;
   pinned: boolean;
   missing: boolean;
 }
@@ -21,7 +25,9 @@ function readLibrary(): EditorShortcut[] {
     return Array.isArray(entries)
       ? entries.filter((entry): entry is EditorShortcut =>
           entry && typeof entry.path === "string" && typeof entry.name === "string" &&
-          typeof entry.folder === "string" && typeof entry.opened === "number" &&
+          typeof entry.folder === "string" && Number.isFinite(entry.opened) &&
+          Math.abs(entry.opened) <= 8.64e15 &&
+          (entry.created === undefined || (Number.isFinite(entry.created) && Math.abs(entry.created) <= 8.64e15)) &&
           Array.isArray(entry.excerpt) && entry.excerpt.every((line: unknown) => typeof line === "string"))
       : [];
   } catch {
@@ -44,6 +50,21 @@ export function useEditorLibrary() {
     }
   }
 
+  // Match late metadata responses by path so pin and locate actions never lose their state.
+  async function loadCreatedTimes(paths: string[]) {
+    if (!paths.length || !isTauri()) return;
+    const timestamps = await editorCreatedTimes(paths).catch(() => []);
+    const byPath = new Map(paths.map((path, index) => [path, timestamps[index]]));
+    if (timestamps.some((value) => value !== null)) {
+      update(entries.value.map((entry) => {
+        const created = byPath.get(entry.path);
+        return created == null ? entry : { ...entry, created };
+      }));
+    }
+  }
+
+  onMounted(() => void loadCreatedTimes(entries.value.filter((entry) => entry.created === undefined).map((entry) => entry.path)));
+
   // Record saved content only. A preview never opens or changes the active document.
   function record(path: string, markdown: string) {
     const existing = entries.value.find((entry) => entry.path === path);
@@ -62,10 +83,12 @@ export function useEditorLibrary() {
       folder: visiblePath.slice(0, separator + 1),
       excerpt,
       opened: Date.now(),
+      created: existing?.created,
       pinned: existing?.pinned ?? false,
       missing: false,
     }, ...others];
     update(next.filter((entry, index) => index < RECENT_LIMIT || entry.pinned));
+    if (existing?.created === undefined) void loadCreatedTimes([path]);
   }
 
   // Repairing a shortcut transfers its pin to the valid replacement.

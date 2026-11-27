@@ -6,7 +6,7 @@ use serde::Serialize;
 // Keep wire identifiers stable so Vue can choose messages independently of Rust diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) enum EditorErrorCode {
+pub(crate) enum EditorErrorCode {
     InvalidPath,
     InvalidDestination,
     FileNotFound,
@@ -37,7 +37,7 @@ pub struct EditorError {
 
 impl EditorError {
     // Report the native detail locally so the UI never needs to render a raw OS message.
-    pub(super) fn new(code: EditorErrorCode, detail: impl Into<String>) -> Self {
+    pub(crate) fn new(code: EditorErrorCode, detail: impl Into<String>) -> Self {
         let error = Self {
             code,
             detail: detail.into(),
@@ -47,11 +47,11 @@ impl EditorError {
     }
 
     // Preserve actionable permission and missing-file failures across read and write operations.
-    pub(super) fn io(error: io::Error) -> Self {
+    pub(crate) fn io(error: io::Error) -> Self {
         Self::classify_io(error, EditorErrorCode::IoFailed)
     }
 
-    pub(super) fn write(error: io::Error) -> Self {
+    pub(crate) fn write(error: io::Error) -> Self {
         Self::classify_io(error, EditorErrorCode::WriteFailed)
     }
 
@@ -66,7 +66,7 @@ impl EditorError {
 }
 
 // Use one failure contract throughout the editor module.
-pub(super) type EditorResult<T> = Result<T, EditorError>;
+pub(crate) type EditorResult<T> = Result<T, EditorError>;
 
 #[cfg(test)]
 mod tests {
