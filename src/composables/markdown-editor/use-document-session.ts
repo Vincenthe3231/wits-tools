@@ -11,7 +11,10 @@ import { notify } from "../use-notifications";
 
 const RECOVERY_DELAY = 500;
 
-export function useDocumentSession(serializeVisual: () => string | undefined) {
+export function useDocumentSession(
+  serializeVisual: () => string | undefined,
+  recordFile: (path: string, markdown: string) => void,
+) {
   const name = ref("Untitled");
   const documentKind = ref<"Untitled" | "FileBacked">("Untitled");
   const mode = ref<"source" | "visual">("source");
@@ -161,15 +164,16 @@ export function useDocumentSession(serializeVisual: () => string | undefined) {
         await recoveryQueue;
       }
       // Include image references from both modes so Save As can publish attachments.
-      const storedName = await markdownEditor.save(
+      const storedPath = await markdownEditor.save(
         buffer.value,
         saveAs,
         markdownImageSources(buffer.value),
       );
-      if (storedName === null) {
+      if (storedPath === null) {
         return false;
       }
-      name.value = storedName;
+      name.value = storedPath.replace(/^.*[\\/]/, "");
+      recordFile(storedPath, buffer.value);
       documentKind.value = "FileBacked";
       saved.value = buffer.value;
       externalChange.value = false;
@@ -189,11 +193,11 @@ export function useDocumentSession(serializeVisual: () => string | undefined) {
   }
 
   // Mark the native picker as opening and restore the enclosing operation on return.
-  async function open() {
+  async function open(shortcut?: string) {
     const previousOperation = operation.value;
     operation.value = "Opening";
     try {
-      return await markdownEditor.open();
+      return await markdownEditor.open(shortcut);
     } finally {
       operation.value = previousOperation;
     }

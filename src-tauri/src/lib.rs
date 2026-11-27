@@ -19,6 +19,7 @@ pub fn run() {
         tauri::generate_handler![browser::browser_toolbar];
     let handle: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
         markdown_editor::commands::editor_open,
+        markdown_editor::commands::editor_export_package,
         markdown_editor::commands::editor_save,
         // Keep image operations scoped to the editor session.
         markdown_editor::commands::editor_stage_image,

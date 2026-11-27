@@ -9,6 +9,7 @@ import { downloader } from "./api/downloader";
 import { cancelVaultTransfer, vaultAction } from "./api/vault";
 import AppToaster from "./components/AppToaster.vue";
 import { useWindowClose } from "./composables/use-window-close";
+import { useEditorLibrary } from "./composables/editor/use-editor-library";
 import WorkspaceAppearance from "./components/dashboard/WorkspaceAppearance.vue";
 import WorkspaceIcon from "./components/ui/WorkspaceIcon.vue";
 import WorkspaceSidebar from "./components/dashboard/WorkspaceSidebar.vue";
@@ -21,6 +22,7 @@ type EditorLifecycle = "NotOpened" | "Active" | "Suspended";
 type CloseChoice = "save" | "discard" | "cancel";
 
 const route = useRoute();
+const router = useRouter();
 
 // Installer launches use a dedicated window view without normal workspace navigation.
 const VaultPage = defineAsyncComponent(() => import("./pages/vault/VaultPage.vue"));
@@ -29,10 +31,14 @@ onMounted(async () => {
   installerWizard.value = (await vaultAction({ kind: "status" }).catch(() => null))?.uninstall ?? false;
 });
 const editor = ref<InstanceType<typeof MarkdownEditorPage>>();
+const library = useEditorLibrary();
+const { entries, storageError } = library;
 
 // Keep search on the dashboard and derive tool names from the shared catalog.
 const isDashboard = computed(() => route.name === "dashboard");
-const toolName = computed(() => tools.find((tool) => tool.routeName === route.name)?.name);
+const toolName = computed(() => route.name === "markdown-editor"
+  ? "Markdown Editor"
+  : tools.find((tool) => tool.routeName === route.name)?.name);
 
 // Preserve the catalog filter while a tool is open.
 const toolQuery = ref("");
@@ -58,10 +64,21 @@ const lifecycle = computed<EditorLifecycle>(() => {
   return editor.value ? "Suspended" : "NotOpened";
 });
 
+// Route home actions through the retained Markdown session and its dirty-document guard.
+async function enterMarkdown(action: "new" | "open", path?: string, repair?: string) {
+  const failure = await router.push({ name: "markdown-editor" });
+  if (failure) return;
+  await nextTick();
+  const opened = await editor.value?.enter(action, path, (newPath) => {
+    if (repair) library.relocate(repair, newPath);
+  });
+  if (!opened) await router.push({ name: "editor" });
+}
+
 let resolveClose: ((choice: CloseChoice) => void) | undefined;
 
 // Keep native pickers and unresolved editor prompts attached to their initiating page.
-const stopGuard = useRouter().beforeEach(() => !editor.value?.navigationBlocked);
+const stopGuard = router.beforeEach(() => !editor.value?.navigationBlocked);
 onScopeDispose(stopGuard);
 
 // Suspend the native close request until the user chooses how to handle unsaved edits.
@@ -155,12 +172,15 @@ const closeError = useWindowClose(async () => {
       <div class="workspace-content">
         <RouterView v-slot="{ Component }">
           <NavigationTransition kind="page" direction="left">
-            <KeepAlive include="ApiTesterPage,CrawlerPage,DownloaderPage">
+            <KeepAlive include="ApiTesterPage,CrawlerPage,DownloaderPage,EditorHomePage">
               <component
                 :is="Component"
                 v-if="!enterEditor"
                 :key="route.path"
-                v-bind="isDashboard ? { query: toolQuery } : {}"
+                v-bind="isDashboard ? { query: toolQuery } : route.name === 'editor' ? {
+                  entries, storageError, enterMarkdown, hasSession: Boolean(editor),
+                  togglePin: library.togglePin, remove: library.remove,
+                } : {}"
               />
             </KeepAlive>
           </NavigationTransition>
@@ -171,6 +191,8 @@ const closeError = useWindowClose(async () => {
             v-show="enterEditor"
             ref="editor"
             :active="enterEditor"
+            @file="library.record"
+            @missing="library.markMissing"
           />
         </NavigationTransition>
       </div>

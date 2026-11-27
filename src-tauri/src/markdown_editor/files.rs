@@ -86,6 +86,7 @@ pub(super) fn open(path: &Path) -> EditorResult<(OpenDocument, FileVersion)> {
             file_backed: true,
             name: name(&path),
             markdown,
+            path: Some(path.clone()),
         },
         FileVersion { path, fingerprint },
     ))

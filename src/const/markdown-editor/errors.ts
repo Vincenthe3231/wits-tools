@@ -13,7 +13,8 @@ const titles: Record<EditorOperation, string> = {
   insertImage: "Couldn’t insert the image",
   previewImage: "Couldn’t preview the image",
   copyImage: "Couldn’t copy the image as a bitmap",
-  visual: "Visual mode couldn’t convert this document",
+  visual: "Formatted mode couldn’t convert this document",
+  exportPackage: "Couldn’t export the Markdown package",
 };
 
 // Keep diagnostic paths and raw exception text out of the visible messages.
@@ -27,6 +28,7 @@ const descriptions: Partial<Record<EditorErrorCode, string>> = {
   fileTooLarge: "Markdown files can be up to 8 MiB.",
   invalidEncoding: "Choose a UTF-8 Markdown file.",
   externalChange: "Your draft is still open. Use Save As to keep your edits.",
+  exportConflict: "A package with this name already exists. Choose another destination.",
   unsupportedImageType: "Choose a PNG, JPEG, GIF, or WebP image.",
   imageTooLarge: "Images can be up to 16 MiB each.",
   imagePreviewUnavailable: "Check that the linked image is available in the document folder.",
@@ -46,7 +48,9 @@ export function editorNotice(cause: unknown, fallback: EditorOperation) {
     ? "warning"
     : "error";
   const title = code === "externalChange" ? "The file changed outside WITS Tools" : titles[operation];
-  const detail = descriptions[code];
+  const detail = operation === "exportPackage" && code === "imagePreviewUnavailable"
+    ? "Check the local image paths. Save an untitled document first if it uses relative paths."
+    : descriptions[code];
   const retained = operation === "pasteImage" || operation === "insertImage"
     ? "Your Markdown is unchanged."
     : operation === "save" || operation === "saveAs" || operation === "recoveryWrite"

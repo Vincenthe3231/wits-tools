@@ -8,11 +8,16 @@ import NavigationTransition from "../../components/NavigationTransition.vue";
 import SourceEditor from "../../components/markdown-editor/SourceEditor.vue";
 import VisualEditor from "../../components/markdown-editor/VisualEditor.vue";
 import { useDocumentSession } from "../../composables/markdown-editor/use-document-session";
+import { markdownPackage } from "../../utils/markdown-editor/markdown-package";
 
 import { editorNotice } from "../../const/markdown-editor/errors";
 import { notify } from "../../composables/use-notifications";
 
 const props = defineProps<{ active: boolean }>();
+const emit = defineEmits<{
+  file: [path: string, markdown: string];
+  missing: [path: string];
+}>();
 
 const visual = ref<InstanceType<typeof VisualEditor>>();
 const source = ref<InstanceType<typeof SourceEditor>>();
@@ -31,7 +36,7 @@ const visualReason = ref("");
 const nativeApp = isTauri();
 let decision: ((value: string) => void) | undefined;
 
-const session = useDocumentSession(() => visual.value?.serialize());
+const session = useDocumentSession(() => visual.value?.serialize(), (path, markdown) => emit("file", path, markdown));
 const { name, mode, buffer, busy, revision, error, recoveryError, externalChange, status, dirty } =
   session;
 
@@ -128,36 +133,58 @@ async function mayReplace(action: "new" | "open") {
 }
 
 // Keep the current document and recovery data until the replacement actually succeeds.
-function changeDocument(action: "new" | "open") {
-  return session.run(async () => {
+async function changeDocument(action: "new" | "open", path?: string, onOpened?: (path: string) => void) {
+  let changed = false;
+  await session.run(async () => {
     if (!(await mayReplace(action))) {
       return;
     }
     await session.settleRecovery();
     try {
       if (action === "open") {
-        const document = await session.open();
+        const document = await session.open(path);
         if (!document) {
           return;
         }
         session.adopt(document);
+        if (document.path) {
+          emit("file", document.path, document.markdown);
+          onOpened?.(document.path);
+        }
       } else {
         await markdownEditor.reset();
         session.adopt();
       }
       openVisualByDefault();
+      changed = true;
+    } catch (cause) {
+      if (path && cause instanceof EditorFailure && cause.code === "fileNotFound") {
+        emit("missing", path);
+      }
+      throw cause;
     } finally {
       if (dirty.value) {
         void session.queueRecovery();
       }
     }
   });
+  return changed;
 }
 
 // Run toolbar and shortcut saves through the same operation guard.
 function saveDocument(saveAs = false) {
   return session.run(async () => {
     await session.save(saveAs);
+  });
+}
+
+// Export the same buffer used for Save while keeping the current file and draft active.
+function exportPackage() {
+  return session.run(async () => {
+    session.materialize();
+    if (await markdownEditor.exportPackage(markdownPackage(buffer.value))) {
+      notify({ severity: "success", title: "Markdown package exported" });
+    }
   });
 }
 
@@ -204,8 +231,7 @@ function shortcuts(event: KeyboardEvent) {
 }
 
 // Check startup recovery once, when the retained editor first mounts.
-onMounted(async () => {
-  window.addEventListener("keydown", shortcuts);
+async function initialize() {
   if (!nativeApp) {
     openVisualByDefault();
     return;
@@ -222,7 +248,21 @@ onMounted(async () => {
       openVisualByDefault();
     }
   });
+}
+
+// Entry actions wait for recovery so a native picker cannot race a saved draft.
+let startup = Promise.resolve();
+onMounted(() => {
+  window.addEventListener("keydown", shortcuts);
+  startup = initialize();
 });
+
+async function enter(action: "new" | "open", path?: string, onOpened?: (path: string) => void) {
+  await startup;
+  if (recovery.value.phase === "Available") return true;
+  if (!nativeApp) return action === "new";
+  return changeDocument(action, path, onOpened);
+}
 
 // Keep the editor DOM and history alive while the dashboard is visible.
 watch(
@@ -267,6 +307,7 @@ async function requestClose(ask: () => Promise<"save" | "discard" | "cancel">) {
 onScopeDispose(() => window.removeEventListener("keydown", shortcuts));
 
 defineExpose({
+  enter,
   requestClose,
   navigationBlocked: computed(
     () => working.value || replacement.value !== undefined || recovery.value.phase === "Available",
@@ -303,6 +344,9 @@ defineExpose({
         <button type="button" :disabled="working || !nativeApp" @click="saveDocument(true)">
           Save As
         </button>
+        <button type="button" :disabled="working || !nativeApp" @click="exportPackage">
+          Export package
+        </button>
       </div>
 
       <div class="mode-switch" role="group" aria-label="Editing mode">
@@ -321,7 +365,7 @@ defineExpose({
           :aria-describedby="visualReason ? 'visual-reason' : undefined"
           @click="switchMode('visual')"
         >
-          Visual
+          Formatted
         </button>
       </div>
     </header>

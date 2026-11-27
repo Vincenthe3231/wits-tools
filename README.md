@@ -133,11 +133,15 @@ Website downloads ask where to save the file. Completed files stay at the chosen
 
 ## Markdown images
 
-In Visual mode, use **Insert image** to choose a local PNG, JPEG, GIF, or WebP, or paste an image from the clipboard. The limit is 16 MiB per image. Select an image and press **Ctrl+C** to copy it. Use the block handle to drag an image block, or use **Block actions** to move it with the keyboard.
+Open **Editor** from the dashboard or sidebar. **New** opens Markdown Editor, and **Open file** uses the native Markdown picker. Use **Recent** and **Pinned** to reopen files, and switch between List and Grid to see filenames or saved text previews. If a file moves, use **Locate file** from its shortcut.
+
+In Formatted, use **Insert image** to choose a local PNG, JPEG, GIF, or WebP, or paste an image from the clipboard. The limit is 16 MiB per image. Select an image and press **Ctrl+C** to copy it. Use the block handle to drag an image block, or use **Block actions** to move it with the keyboard.
 
 On save, imported images go into a `wits-images/` folder beside the Markdown file. Save As copies these attachments with the document. Keep the folder alongside the Markdown when moving or sharing it.
 
 In Source mode, paste a clipboard image with **Ctrl+V** to insert its Markdown reference at the cursor. You can also write a relative reference such as `![Screenshot](./screenshots/login.png)` for an image already inside the document folder. Switch to Visual to preview it. When moving or saving a copy of the Markdown to another folder, copy any manually linked image folders yourself.
+
+Use **Export package** from Source or Formatted to write a copy of the current Markdown, including unsaved edits. For `Implementation Plan.md`, the selected destination receives an `Implementation_Plan/` folder containing `Implementation Plan.md` and an `img/` folder. The export copies local Markdown image references, including locally linked screenshots and staged clipboard images, and updates the paths inside the copy. Move the whole package when sharing it.
 
 ## Crawler and Media Downloads
 
@@ -181,7 +185,7 @@ Rust tools own their native error codes. Markdown Editor defines those codes in 
 
 Report a failure from the action that owns it. Use `src/composables/use-notifications.ts` to publish it through the shared `AppToaster.vue`. Treat picker cancellation as a normal outcome. Keep recovery controls available in the owning view, including **Save As** for an external file conflict. Use the status tokens and notification rules in [DESIGN.md](DESIGN.md).
 
-- If image paste fails in Source or Visual mode, show one error toast and leave the Markdown unchanged.
+- If image paste fails in Source or Formatted, show one error toast and leave the Markdown unchanged.
 - If draft recovery writes keep failing, show one warning toast and keep the recovery status visible. A successful write clears the status and allows a later outage to trigger a new toast.
 
 ## Vault

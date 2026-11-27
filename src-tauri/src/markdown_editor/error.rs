@@ -17,6 +17,7 @@ pub(super) enum EditorErrorCode {
     FileTooLarge,
     InvalidEncoding,
     ExternalChange,
+    ExportConflict,
     UnsupportedImageType,
     ImageTooLarge,
     ImagePreviewUnavailable,

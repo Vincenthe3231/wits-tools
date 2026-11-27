@@ -26,6 +26,7 @@ import WorkspaceIcon from "../ui/WorkspaceIcon.vue";
           v-for="tool in tools"
           :key="tool.routeName"
           class="workspace-link"
+          :class="{ 'router-link-active': tool.routeName === 'editor' && $route.name === 'markdown-editor' }"
           :to="{ name: tool.routeName }"
         >
           <WorkspaceIcon :name="tool.icon" />

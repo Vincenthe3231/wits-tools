@@ -7,23 +7,30 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::{
     EditorError, EditorErrorCode, EditorResult, EditorState, FileVersion, OpenDocument,
-    RecoveryDraft, files, images, recovery,
+    RecoveryDraft, files, images, package, recovery,
 };
 
 /// Replace the open file only after the picker succeeds and the selected file is readable.
 #[tauri::command]
-pub async fn editor_open(app: AppHandle) -> EditorResult<Option<OpenDocument>> {
-    let Some(path) = app
-        .dialog()
-        .file()
-        .add_filter("Markdown", &["md", "markdown"])
-        .blocking_pick_file()
-    else {
-        return Ok(None);
+pub async fn editor_open(
+    app: AppHandle,
+    shortcut: Option<PathBuf>,
+) -> EditorResult<Option<OpenDocument>> {
+    // Recent files and the picker share the same validation and session replacement.
+    let path = if let Some(path) = shortcut {
+        path
+    } else {
+        let Some(path) = app
+            .dialog()
+            .file()
+            .add_filter("Markdown", &["md", "markdown"])
+            .blocking_pick_file()
+        else {
+            return Ok(None);
+        };
+        path.into_path()
+            .map_err(|error| EditorError::new(EditorErrorCode::InvalidPath, error.to_string()))?
     };
-    let path = path
-        .into_path()
-        .map_err(|error| EditorError::new(EditorErrorCode::InvalidPath, error.to_string()))?;
     let state = app.state::<EditorState>();
     let mut current = current_file(&state)?;
     let (document, version) = files::open(&path)?;
@@ -39,7 +46,7 @@ pub async fn editor_save(
     markdown: String,
     save_as: bool,
     image_sources: Vec<String>,
-) -> EditorResult<Option<String>> {
+) -> EditorResult<Option<PathBuf>> {
     let state = app.state::<EditorState>();
     // Release the session lock before yielding control to a native file picker.
     let original = current_file(&state)?.clone();
@@ -74,9 +81,34 @@ pub async fn editor_save(
         &markdown,
         |destination| images::publish(&image_root, parent, destination, &image_sources),
     )?;
-    let name = files::name(&saved.path);
+    let path = saved.path.clone();
     *current = Some(saved);
-    Ok(Some(name))
+    Ok(Some(path))
+}
+
+/// Build a shareable snapshot without changing the active document or its recovery state.
+#[tauri::command]
+pub async fn editor_export_package(
+    app: AppHandle,
+    markdown: String,
+    assets: Vec<package::PackageAsset>,
+) -> EditorResult<bool> {
+    let state = app.state::<EditorState>();
+    let original = current_file(&state)?.clone();
+    let Some(destination) = app.dialog().file().blocking_pick_folder() else {
+        return Ok(false);
+    };
+    let destination = destination.into_path().map_err(|error| {
+        EditorError::new(EditorErrorCode::InvalidDestination, error.to_string())
+    })?;
+    package::write(
+        &destination,
+        original.as_ref().map(|file| file.path.as_path()),
+        &image_cache(&app)?,
+        &markdown,
+        &assets,
+    )?;
+    Ok(true)
 }
 
 /// Clear persisted recovery before releasing the current file association.
@@ -104,8 +136,10 @@ pub fn editor_restore(app: AppHandle, state: State<EditorState>) -> EditorResult
             "The recovery draft is unavailable.",
         )
     })?;
+    let path = draft.original.as_ref().map(|file| file.path.clone());
     *current = draft.original;
     Ok(OpenDocument {
+        path,
         file_backed: current.is_some(),
         name: draft.name,
         markdown: draft.markdown,

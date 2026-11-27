@@ -8,6 +8,8 @@ export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: "/", name: "dashboard", component: DashboardPage },
+    // Keep the existing Markdown location available to bookmarks and retained sessions.
+    { path: "/tools/editor", name: "editor", component: () => import("../pages/editor/EditorHomePage.vue") },
     { path: "/tools/markdown", name: "markdown-editor", component: MarkdownEditorPage },
     // Load the API workspace when the user first opens it.
     {

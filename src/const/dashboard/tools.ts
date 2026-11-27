@@ -3,9 +3,9 @@
 // Keep navigation labels and searchable descriptions in one catalog.
 export const tools = [
   {
-    routeName: "markdown-editor",
-    name: "Markdown Editor",
-    description: "Write and edit local Markdown files in Visual or Source mode.",
+    routeName: "editor",
+    name: "Editor",
+    description: "Create and reopen local documents.",
     keywords: "writing documents notes md text",
     icon: "document",
   },

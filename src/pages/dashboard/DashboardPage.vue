@@ -17,8 +17,8 @@ const matches = computed(() => searchTools(props.query));
       <div>
         <h1 id="dashboard-title">Your toolkit</h1>
         <p>Edit Markdown, test an API, or crawl a website.</p>
-        <RouterLink class="dashboard-primary" :to="{ name: 'markdown-editor' }">
-          Open Markdown Editor
+        <RouterLink class="dashboard-primary" :to="{ name: 'editor' }">
+          Open Editor
           <WorkspaceIcon name="arrow" />
         </RouterLink>
       </div>

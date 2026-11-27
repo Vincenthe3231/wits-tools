@@ -3,6 +3,7 @@ pub(crate) mod commands;
 mod error;
 mod files;
 mod images;
+mod package;
 mod recovery;
 
 use std::{path::PathBuf, sync::Mutex};
@@ -25,6 +26,7 @@ pub struct OpenDocument {
     file_backed: bool,
     name: String,
     markdown: String,
+    path: Option<PathBuf>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
